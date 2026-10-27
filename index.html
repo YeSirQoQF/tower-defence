@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:," />
+  <title>3D塔防游戏</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="vignette"></div>
+
+  <div id="file-warning">
+    <div class="warning-card">
+      <p class="eyebrow">FILE PROTOCOL</p>
+      <h1>请用本地服务器打开</h1>
+      <p>three.js 的 ES Module 无法通过 <code>file://</code> 协议直接加载，所以直接双击 index.html 是玩不了的。</p>
+      <ol>
+        <li>双击项目目录里的 <b>start.bat</b></li>
+        <li>或在项目目录执行 <code>npm start</code></li>
+        <li>浏览器打开 <code>http://127.0.0.1:8080</code></li>
+      </ol>
+    </div>
+  </div>
+
+  <div id="hud">
+    <header class="hud-top">
+      <div class="stats">
+        <div class="stat">
+          <span class="dot gold"></span>
+          <span class="label">金币</span>
+          <strong id="stat-gold">0</strong>
+        </div>
+        <div class="stat">
+          <span class="dot life"></span>
+          <span class="label">生命</span>
+          <strong id="stat-lives">0</strong>
+        </div>
+        <div class="stat">
+          <span class="dot wave"></span>
+          <span class="label">波次</span>
+          <strong id="stat-wave">0 / 12</strong>
+        </div>
+        <div class="stat">
+          <span class="dot enemy"></span>
+          <span class="label">场上</span>
+          <strong id="stat-enemies">0</strong>
+        </div>
+        <div class="stat">
+          <span class="dot score"></span>
+          <span class="label">分数</span>
+          <strong id="stat-score">0</strong>
+        </div>
+      </div>
+
+      <div class="seed-area">
+        <button id="btn-copy" class="ghost" title="复制当前种子链接">
+          种子 <b id="seed-label">----</b>
+        </button>
+        <select id="mode" title="模式"></select>
+        <select id="difficulty" title="难度"></select>
+        <button id="btn-new" class="ghost">新地图</button>
+      </div>
+    </header>
+
+    <aside id="wave-panel">
+      <div class="panel-head">
+        <span id="wave-title">准备阶段</span>
+        <div class="speed">
+          <button data-speed="1" class="active">1x</button>
+          <button data-speed="2">2x</button>
+          <button data-speed="3">3x</button>
+          <button data-speed="4">4x</button>
+        </div>
+      </div>
+      <div id="wave-preview" class="preview"></div>
+      <button id="btn-wave" class="primary">开始第 1 波</button>
+      <div id="wave-tip" class="tip"></div>
+    </aside>
+
+    <div id="tower-bar"></div>
+
+    <div id="tower-panel" class="hidden"></div>
+
+    <canvas id="minimap" class="hidden" width="200" height="200"></canvas>
+
+    <div id="help-wrap">
+      <button id="help-button" aria-label="游戏说明">?</button>
+      <span class="help-tooltip">游戏说明</span>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <footer id="site-footer">
+    <span>© 葉sir</span>
+    <span class="footer-sep">|</span>
+    <a href="https://github.com/YeSirQoQF" target="_blank" rel="noopener noreferrer">作者 GitHub</a>
+    <span class="footer-sep">|</span>
+    <a href="https://github.com/YeSirQoQF/tower-defence" target="_blank" rel="noopener noreferrer">仓库页面</a>
+    <span class="footer-sep">|</span>
+    <span>All right reserved.</span>
+  </footer>
+
+  <div id="overlay" class="hidden">
+    <div class="overlay-card">
+      <p class="eyebrow" id="overlay-eyebrow">RESULT</p>
+      <h1 id="overlay-title"></h1>
+      <p class="overlay-desc" id="overlay-desc"></p>
+      <div class="overlay-stats" id="overlay-stats"></div>
+      <div class="overlay-actions">
+        <button id="btn-retry" class="primary">同种子重试</button>
+        <button id="btn-again" class="ghost">换一张地图</button>
+      </div>
+      <p class="seed-line">种子 <b id="overlay-seed"></b></p>
+    </div>
+  </div>
+
+  <div id="help-modal" class="hidden">
+    <div class="help-card">
+      <p class="eyebrow">GUIDE</p>
+      <h2>3D塔防游戏 · 游戏说明</h2>
+      <div class="help-grid">
+        <section>
+          <h3>操作</h3>
+          <ul>
+            <li><b>左键</b> 建造；点击已建塔打开升级栏</li>
+            <li><b>右键</b> 出售（返还累计投入的 70%）</li>
+            <li><b>1–9 / 0 / -</b> 选塔；<b>0</b> 曜辉，<b>-</b> 玄蚀</li>
+            <li><b>空格</b> 提前开下一波；<b>H</b> 打开说明</li>
+            <li><b>WASD / 中键拖动</b> 平移；<b>Q / E</b> 旋转</li>
+            <li><b>滚轮</b> 缩放；<b>C</b> 回到中心</li>
+          </ul>
+        </section>
+        <section>
+          <h3>模式与节奏</h3>
+          <ul>
+            <li><b>常规</b> 12 波，全部开始并清空后胜利</li>
+            <li><b>无尽</b> 波次无限，追求最高分</li>
+            <li><b>巨型</b> 201×201；64 个据点按难度解锁</li>
+            <li>首波前无限准备且无提前奖励；之后每 30 秒自动开下一波，可提前开波获得剩余时间金币</li>
+            <li>波次可以重叠；漏怪扣生命，生命归零结束</li>
+          </ul>
+        </section>
+        <section>
+          <h3>防御塔</h3>
+          <ul>
+            <li>塔栏顺序：1 脉冲、2 震荡、3 供能、4 魔法、5 霜冻、6 灼烧、7 沧浪、8 电涌、9 风爆、0 曜辉、- 玄蚀</li>
+            <li>每座塔都有 HP；敌人贴近约 1.4 格时会攻击塔，多个敌人可以叠加</li>
+            <li>供能塔治疗并强化范围内的塔；脉冲与供能塔可多次升级</li>
+            <li>魔法塔射程 4.2 格：范围内有属性塔时，每次攻击随机抽取 3 次属性；没有属性塔时改为 3 次无属性魔法伤害。每 0.08 秒连发一次，均造成范围魔法伤害</li>
+          </ul>
+        </section>
+        <section>
+          <h3>敌人与防线</h3>
+          <ul>
+            <li>步兵、疾行者、重甲、精英均会攻击相邻塔；精英对塔伤害最高</li>
+            <li>击杀得分：步兵 1、疾行者 1、重甲 3、精英 20</li>
+            <li>重甲漏怪扣 2 生命，精英扣 5；其他敌人扣 1</li>
+            <li>塔被摧毁后不会返还金币；及时用供能塔治疗或重建</li>
+          </ul>
+        </section>
+        <section class="help-wide">
+          <h3>属性与附着 · 详细</h3>
+          <p class="help-lead">伤害分为物理 / 魔法。攻击属性为无、火、冰、雷、风、水、光、暗；<b>光、暗只来自魔法伤害</b>。每次属性命中附着 1 点，每种最多 4 点，默认半衰期 1 秒；当目标仍有光附着时，其他属性不会因时间流逝而衰减，光本身仍会衰减。</p>
+          <table class="help-table">
+            <thead><tr><th>属性</th><th>减益</th><th>效果</th></tr></thead>
+            <tbody>
+              <tr><td>冰</td><td>霜冻</td><td>每层降低移动速度；4 层时速度降至 10%。</td></tr>
+              <tr><td>火</td><td>燃烧</td><td>每 0.7 秒受到 <b>1.6 × 层数</b> 的物理/火伤害，不续燃。</td></tr>
+              <tr><td>雷</td><td>触电</td><td>每 0.7 秒受到 <b>1.6 × 层数</b> 的物理/雷伤害，不续雷。</td></tr>
+              <tr><td>风</td><td>风化</td><td>每 1.2 秒对自身和 1.6 格内敌人造成 <b>1.2 × 层数</b> 物理/风伤害。</td></tr>
+              <tr><td>水</td><td>迟缓</td><td>每层使攻击间隔变为 <b>× (1 + 0.12 × 层数)</b>，攻击伤害 <b>×(1 − 0.05 × 层数)</b>。</td></tr>
+              <tr><td>光</td><td>圣裁</td><td>每层使敌人受到的最终伤害 <b>+15%</b>（最多 +60%），并在光存在时冻结其他属性的自然衰减；真实伤害不受影响。</td></tr>
+              <tr><td>暗</td><td>幽冥</td><td>敌人造成伤害时受到 <b>20% × 层数</b> 的暗属性魔法反伤（最多 80%）。</td></tr>
+            </tbody>
+          </table>
+          <p class="help-note">燃竭、迷醉、凝滞是暗属性反应附加的永久减益，分别提供火属性魔法持续伤害、敌我不分的攻击、极大减速与降攻速；同一敌人每项最多一次。</p>
+        </section>
+        <section class="help-wide">
+          <h3>属性反应 · 优先级与公式</h3>
+          <p class="help-lead">反应按以下顺序检查，单个敌人有 0.15 秒反应冷却，最多连续结算 10 次；反应伤害本身不会额外附着属性。</p>
+          <table class="help-table">
+            <thead><tr><th>反应</th><th>条件</th><th>效果</th></tr></thead>
+            <tbody>
+              <tr><td>湮灭</td><td>1 光 + 1 暗</td><td>消耗全部光/暗；3 格范围 <b>30 + 10 × (光+暗)</b> 无属性魔法伤害；自身额外受到 <b>20% 最大生命</b> 真实伤害。</td></tr>
+              <tr><td>燃竭</td><td>1 暗 + 1 火</td><td>永久火属性魔法 DoT：每 0.7 秒 <b>7.2</b>；最多一次，不叠加。</td></tr>
+              <tr><td>迷醉</td><td>1 暗 + 1 水</td><td>永久；接触攻击有 50% 改为攻击附近敌人，没有可攻击塔时也会攻击附近敌人；最多一次。</td></tr>
+              <tr><td>凝滞</td><td>1 暗 + 1 冰</td><td>永久；移速 ×0.3，攻击间隔 ÷0.3；最多一次。</td></tr>
+              <tr><td>并联</td><td>1 暗 + 1 雷</td><td>2.2 格范围雷属性魔法伤害，每个目标受到 <b>8 × 波及敌人数</b>；不附着雷。</td></tr>
+              <tr><td>席卷</td><td>1 暗 + 1 风</td><td>若自身有燃竭/迷醉/凝滞，将该暗系减益复制给 2.5 格内敌人；没有可扩散减益时走风扩散。</td></tr>
+              <tr><td>超导</td><td>1 雷 + 1 冰</td><td>先结算再消耗 1 雷/1 冰；<b>round(10 + 1.5 × 燃烧/触电/风化/感电估算)</b> 物理无属性伤害；清空火/雷/风/感电。</td></tr>
+              <tr><td>蒸汽</td><td>1 火 + 1 冰</td><td>消耗 1 火/1 冰，生成 1 水。</td></tr>
+              <tr><td>凝结</td><td>1 水 + 1 冰</td><td>消耗 1 水/1 冰，再生成 2 冰。</td></tr>
+              <tr><td>熄灭</td><td>1 火 + 1 水</td><td>消耗 1 火/1 水。</td></tr>
+              <tr><td>感电</td><td>1 雷 + 1 水</td><td>消耗全部雷/水；感电持续 <b>2 + 0.5 × 层数</b> 秒，每 0.7 秒造成 <b>1.8 × (1 + 2.5 格内带雷敌人数)</b> 雷属性物理伤害。</td></tr>
+              <tr><td>超载</td><td>1 雷 + 1 火</td><td>消耗全部雷/火；2.2 格范围 <b>6 × (雷+火)</b> 物理/火伤害。</td></tr>
+              <tr><td>扩散</td><td>1 风 + 1 其他</td><td>消耗 1 风/1 属性，把 1 点该属性扩散给 2 格内敌人；光/暗也可扩散。</td></tr>
+            </tbody>
+          </table>
+          <p class="help-note">提示：光可以锁住其他附着，适合先叠火/雷/风/暗再触发反应；暗系反应会永久改变敌人行为，尽量优先击杀被点燃或迷醉的目标。真实伤害无视抗性与圣裁，湮灭的自伤会直接扣除最大生命比例。</p>
+        </section>
+      </div>
+      <button id="help-close" class="primary">关闭</button>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      if (location.protocol === 'file:') {
+        document.documentElement.classList.add('file-protocol');
+        return;
+      }
+      var script = document.createElement('script');
+      script.type = 'module';
+      script.src = './js/main.js';
+      document.body.appendChild(script);
+    })();
+  </script>
+</body>
+</html>
