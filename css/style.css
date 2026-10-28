@@ -238,6 +238,17 @@ select {
   color: var(--accent);
 }
 
+.speed .pause-toggle {
+  border-right: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.speed .pause-toggle.active {
+  background: rgba(56, 189, 248, 0.16);
+  color: var(--accent);
+}
+
 .preview {
   display: flex;
   flex-wrap: wrap;

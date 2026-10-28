@@ -31,6 +31,7 @@ import {
   getDarkReflectRatio,
   getIceSlowFactor,
   getLightDamageMultiplier,
+  ICE_SLOW_PER_LAYER,
   getStasisAttackFactor,
   getStasisMovementFactor,
   getVisibleAttachments,
@@ -522,6 +523,7 @@ export class Game {
     this.kills = 0;
     this.built = 0;
     this.speed = 1;
+    this.paused = false;
     this.selectedTowerType = 'gun';
     this.selectedTower = null;
     this.towerPanelTower = null;
@@ -1310,6 +1312,7 @@ export class Game {
       overlayStats: document.getElementById('overlay-stats'),
       overlaySeed: document.getElementById('overlay-seed'),
       toast: document.getElementById('toast'),
+      pause: document.getElementById('btn-pause'),
       copy: document.getElementById('btn-copy'),
       newMap: document.getElementById('btn-new'),
       retry: document.getElementById('btn-retry'),
@@ -1371,7 +1374,7 @@ export class Game {
               <span><i>伤害类型</i><b>${damageType}</b></span>
               <span><i>属性</i><b>${element.label}</b></span>
               ${type.splash ? `<span><i>爆炸半径</i><b>${type.splash} 格</b></span>` : ''}
-              ${type.slowFactor ? `<span><i>冰减速</i><b>2 层</b></span>` : ''}`;
+              ${type.element === 'ice' ? `<span><i>冰减速</i><b>每层 −${(ICE_SLOW_PER_LAYER * 100).toFixed(1)}%</b></span>` : ''}`;
         }
         const tags = support
           ? '可升级：强化范围 / 攻击 / 生命与治疗'
@@ -1421,6 +1424,11 @@ export class Game {
         this.speed = Number(button.dataset.speed);
         this.updateHud();
       });
+    });
+
+    this.dom.pause.addEventListener('click', () => {
+      this.togglePause();
+      this.dom.pause.blur();
     });
 
     this.dom.helpButton.addEventListener('click', () => this.openHelp());
@@ -1583,6 +1591,12 @@ export class Game {
     this.setGhostType(typeId);
     this.updateHud();
     if (this.hoverCell) this.updateGhost(this.hoverCell);
+  }
+
+  togglePause() {
+    if (this.helpOpen || (this.phase !== 'build' && this.phase !== 'combat')) return;
+    this.paused = !this.paused;
+    this.updateHud();
   }
 
   copyLink() {
@@ -1861,6 +1875,8 @@ export class Game {
     } else if (key === ' ') {
       event.preventDefault();
       if (this.phase === 'build') this.startWave();
+    } else if (lower === 'p') {
+      if (!event.repeat) this.togglePause();
     } else if (lower === 'h') {
       if (this.helpOpen) this.closeHelp();
       else this.openHelp();
@@ -2306,6 +2322,12 @@ export class Game {
     document.querySelectorAll('[data-speed]').forEach((button) => {
       button.classList.toggle('active', Number(button.dataset.speed) === this.speed);
     });
+
+    if (this.dom.pause) {
+      this.dom.pause.textContent = this.paused ? '播放' : '暂停';
+      this.dom.pause.classList.toggle('active', this.paused);
+      this.dom.pause.setAttribute('aria-pressed', String(this.paused));
+    }
 
     this.dom.towerBar.querySelectorAll('.tower-card').forEach((card) => {
       const type = TOWER_TYPES[card.dataset.type];
@@ -3307,7 +3329,7 @@ export class Game {
     this.lastTime = now;
     dt = Math.min(dt, 0.1);
 
-    if (!this.helpOpen && (this.phase === 'build' || this.phase === 'combat')) {
+    if (!this.helpOpen && !this.paused && (this.phase === 'build' || this.phase === 'combat')) {
       this.accumulator += dt * this.speed;
       let steps = 0;
       while (this.accumulator >= STEP && steps < 8) {

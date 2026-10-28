@@ -221,11 +221,9 @@ export const TOWER_TYPES = Object.freeze({
     damage: 4,
     damageType: 'physical',
     element: 'ice',
-    slowFactor: 0.45,
-    slowDuration: 1.5,
     color: 0x22d3ee,
     accent: 0x818cf8,
-    desc: '冰属性物理 · 2层冻结减速'
+    desc: '冰属性物理 · 逐层减速'
   },
   burn: {
     id: 'burn',
