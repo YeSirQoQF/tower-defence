@@ -13,6 +13,7 @@ import { generateMap } from './mapgen.js';
 import { generateGiantMap } from './giantmap.js';
 import { createWave, generateWaves, waveTotals, waveSummary } from './waves.js';
 import { makeRng, randomSeed } from './rng.js';
+import { renderMarkdown } from './markdown.js';
 import { buildPathGraph, findRoute } from './systems/pathfinding.js';
 import { createResistances, getResistanceMultiplier } from './systems/resistance.js';
 import {
@@ -642,6 +643,8 @@ export class Game {
     this.enemyBombs = [];
     this.sweepVortices = [];
     this.helpOpen = false;
+    this.helpReadmeLoaded = false;
+    this.helpReadmeLoading = false;
     this.prepRemaining = Infinity;
     this.prepTotal = Infinity;
     this.announcedStrongholds = new Set();
@@ -1410,6 +1413,7 @@ export class Game {
       helpModal: document.getElementById('help-modal'),
       helpButton: document.getElementById('help-button'),
       helpClose: document.getElementById('help-close'),
+      helpReadme: document.getElementById('help-readme'),
       minimap: document.getElementById('minimap'),
       towerPanel: document.getElementById('tower-panel'),
       waveTitle: document.getElementById('wave-title'),
@@ -1713,6 +1717,30 @@ export class Game {
   openHelp() {
     this.helpOpen = true;
     this.dom.helpModal.classList.remove('hidden');
+    this.loadHelpMarkdown();
+  }
+
+  async loadHelpMarkdown() {
+    if (!this.dom.helpReadme) return;
+    if (this.helpReadmeLoaded) {
+      this.dom.helpReadme.hidden = false;
+      return;
+    }
+    if (this.helpReadmeLoading) return;
+    this.helpReadmeLoading = true;
+    this.dom.helpReadme.hidden = false;
+    this.dom.helpReadme.innerHTML = '<p>正在加载 README.md ...</p>';
+    try {
+      const response = await fetch('./README.md', { cache: 'no-cache' });
+      if (!response.ok) throw new Error(`README ${response.status}`);
+      const markdown = await response.text();
+      this.dom.helpReadme.innerHTML = renderMarkdown(markdown);
+      this.helpReadmeLoaded = true;
+    } catch {
+      this.dom.helpReadme.innerHTML = '<p>无法加载 README.md。请确认它和 index.html 位于同一目录，并通过本地服务器打开游戏。</p>';
+    } finally {
+      this.helpReadmeLoading = false;
+    }
   }
 
   closeHelp() {
