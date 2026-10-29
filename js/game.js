@@ -760,7 +760,7 @@ export class Game {
     canvas.addEventListener('pointerleave', () => this.hideGhost());
     canvas.addEventListener('pointerdown', (event) => this.onPointerDown(event));
     canvas.addEventListener('wheel', (event) => this.onWheel(event), { passive: false });
-    canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+    document.addEventListener('contextmenu', (event) => event.preventDefault(), { capture: true });
     canvas.addEventListener('auxclick', (event) => {
       if (event.button === 1) event.preventDefault();
     });
