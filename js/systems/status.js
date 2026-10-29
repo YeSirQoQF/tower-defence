@@ -2,6 +2,7 @@ import { ELEMENTS } from '../config.js';
 
 export const MAX_ATTACHMENT = 4;
 export const HALF_LIFE_SECONDS = 1;
+export const LIGHT_DARK_HALF_LIFE_SECONDS = 2.5;
 export const ICE_SLOW_PER_LAYER = 0.275;
 export const BURN_TICK_SECONDS = 0.7;
 export const BURN_DAMAGE_PER_LAYER = 1.6;
@@ -21,15 +22,22 @@ export const LIGHT_DAMAGE_AMP_PER_LAYER = 0.15;
 export const DARK_REFLECT_PER_LAYER = 0.2;
 export const SCORCH_TICK_SECONDS = 0.7;
 export const SCORCH_DAMAGE_PER_TICK = 7.2;
-export const STASIS_MOVE_FACTOR = 0.3;
-export const STASIS_ATTACK_FACTOR = 0.3;
-export const ANNIHILATION_BASE_DAMAGE = 30;
-export const ANNIHILATION_DAMAGE_PER_LAYER = 10;
-export const ANNIHILATION_RADIUS_CELLS = 3;
-export const ANNIHILATION_SELF_MAX_HP_RATIO = 0.2;
-export const PARALLEL_RADIUS_CELLS = 2.2;
+export const SCORCH_RADIUS_CELLS = 1.5;
+export const STASIS_MOVE_FACTOR = 0.2;
+export const STASIS_ATTACK_FACTOR = 0.2;
+export const ANNIHILATION_BASE_DAMAGE = 40;
+export const ANNIHILATION_DAMAGE_PER_LAYER = 12;
+export const ANNIHILATION_RADIUS_CELLS = 3.6;
+export const ANNIHILATION_HIGHEST_TRUE_RATIO = 0.2;
+export const ANNIHILATION_OTHER_TRUE_RATIO = 0.05;
+export const PARALLEL_RADIUS_CELLS = 2.8;
 export const PARALLEL_DAMAGE_PER_TARGET = 8;
-export const DARK_SPREAD_RADIUS_CELLS = 2.5;
+export const DARK_SPREAD_RADIUS_CELLS = 3;
+export const SWEEP_VORTEX_TICKS = 3;
+export const SWEEP_VORTEX_TICK_SECONDS = 0.45;
+export const SWEEP_VORTEX_DAMAGE = 10;
+export const EVAPORATE_DAMAGE = 12;
+export const MELT_DAMAGE = 8;
 export const REACTION_CHAIN_LIMIT = 10;
 export const SPREAD_RADIUS_CELLS = 2;
 export const REACTION_COOLDOWN = 0.15;
@@ -103,6 +111,10 @@ export function addAttachment(enemy, element, amount = 1) {
   return rounded - current;
 }
 
+export function getAttachmentHalfLife(element) {
+  return element === 'light' || element === 'dark' ? LIGHT_DARK_HALF_LIFE_SECONDS : HALF_LIFE_SECONDS;
+}
+
 export function decayStatus(enemy, dt) {
   if (!enemy.status) return;
   const lightLayers = enemy.status.attachments.light || 0;
@@ -116,7 +128,7 @@ export function decayStatus(enemy, dt) {
       if (enemy.status.residuals) enemy.status.residuals[element] = 0;
       continue;
     }
-    raw *= Math.pow(0.5, dt / HALF_LIFE_SECONDS);
+    raw *= Math.pow(0.5, dt / getAttachmentHalfLife(element));
     if (raw < 0.05) raw = 0;
     const rounded = Math.min(MAX_ATTACHMENT, Math.round(raw * 10) / 10);
     enemy.status.attachments[element] = rounded;
@@ -250,8 +262,9 @@ export function tickScorch(enemy, dt, damageCallback) {
       damageType: 'magic',
       element: 'fire',
       attach: 0,
-      source: 'scorch'
-    });
+      source: 'scorch',
+      reaction: true
+    }, SCORCH_RADIUS_CELLS);
   }
 }
 
@@ -297,7 +310,8 @@ export function resolveReactions(enemy, spreadCallback) {
           ANNIHILATION_BASE_DAMAGE + ANNIHILATION_DAMAGE_PER_LAYER * (light + dark)
         ),
         radius: ANNIHILATION_RADIUS_CELLS,
-        selfTrueRatio: ANNIHILATION_SELF_MAX_HP_RATIO
+        highestTrueRatio: ANNIHILATION_HIGHEST_TRUE_RATIO,
+        otherTrueRatio: ANNIHILATION_OTHER_TRUE_RATIO
       });
       continue;
     }
@@ -370,7 +384,7 @@ export function resolveReactions(enemy, spreadCallback) {
       attachments.fire -= 1;
       attachments.ice -= 1;
       addAttachment(enemy, 'water', 1);
-      events.push({ type: 'steam', element: 'water' });
+      events.push({ type: 'melt', element: 'water', damage: MELT_DAMAGE });
       continue;
     }
 
@@ -385,7 +399,7 @@ export function resolveReactions(enemy, spreadCallback) {
     if (attachments.fire >= 1 && attachments.water >= 1) {
       attachments.fire -= 1;
       attachments.water -= 1;
-      events.push({ type: 'quench', element: 'none' });
+      events.push({ type: 'evaporate', element: 'none', damage: EVAPORATE_DAMAGE });
       continue;
     }
 

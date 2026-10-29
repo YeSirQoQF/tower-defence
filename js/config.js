@@ -147,7 +147,7 @@ export const TOWER_TYPES = Object.freeze({
     id: 'gun',
     name: '脉冲枪塔',
     key: '1',
-    cost: 55,
+    cost: 45,
     hp: 120,
     range: 3.1,
     fireRate: 2.6,
@@ -174,11 +174,29 @@ export const TOWER_TYPES = Object.freeze({
     accent: 0xef4444,
     desc: '范围伤害 · 克制集群'
   },
+  coin: {
+    id: 'coin',
+    name: '铸币塔',
+    key: '3',
+    cost: 100,
+    hp: 130,
+    range: 0,
+    fireRate: 0,
+    damage: 0,
+    damageType: 'physical',
+    element: 'none',
+    coinTower: true,
+    income: 3,
+    incomeInterval: 4,
+    color: 0xfacc15,
+    accent: 0xb45309,
+    desc: '周期性生产金币 · 可升级'
+  },
   supply: {
     id: 'supply',
     name: '供能塔',
-    key: '3',
-    cost: 100,
+    key: '4',
+    cost: 80,
     hp: 160,
     range: 3.6,
     auraRange: 3.6,
@@ -194,7 +212,7 @@ export const TOWER_TYPES = Object.freeze({
   magic: {
     id: 'magic',
     name: '魔法塔',
-    key: '4',
+    key: '5',
     cost: 500,
     hp: 150,
     range: 4.2,
@@ -204,16 +222,39 @@ export const TOWER_TYPES = Object.freeze({
     damageType: 'magic',
     element: 'none',
     magicTower: true,
+    recognizeRange: 2,
     pickCount: 3,
     castInterval: 0.08,
     color: 0xc084fc,
     accent: 0x7c3aed,
     desc: '抽取范围内属性；无属性时三连无属性魔法'
   },
+  cursed: {
+    id: 'cursed',
+    name: '诅咒塔',
+    key: '6',
+    cost: 1300,
+    hp: 180,
+    range: 6,
+    fireRate: 0.6,
+    damage: 16,
+    damageType: 'magic',
+    element: 'none',
+    curseTower: true,
+    recognizeRange: 2,
+    pickCount: 7,
+    castInterval: 0.1,
+    hpConsumeRatio: 0.04,
+    damagePerHp: 1.6,
+    reactionLevels: 6,
+    color: 0x7c3aed,
+    accent: 0x4c1d95,
+    desc: '抽取属性七连发 · 消耗塔血强化末段'
+  },
   frost: {
     id: 'frost',
     name: '霜冻塔',
-    key: '5',
+    key: '7',
     cost: 80,
     hp: 110,
     range: 2.7,
@@ -228,7 +269,7 @@ export const TOWER_TYPES = Object.freeze({
   burn: {
     id: 'burn',
     name: '灼烧塔',
-    key: '6',
+    key: '8',
     cost: 95,
     hp: 130,
     range: 3,
@@ -243,7 +284,7 @@ export const TOWER_TYPES = Object.freeze({
   water: {
     id: 'water',
     name: '沧浪塔',
-    key: '7',
+    key: '9',
     cost: 125,
     hp: 125,
     range: 3,
@@ -258,7 +299,7 @@ export const TOWER_TYPES = Object.freeze({
   surge: {
     id: 'surge',
     name: '电涌塔',
-    key: '8',
+    key: '0',
     cost: 150,
     hp: 130,
     range: 3,
@@ -273,7 +314,7 @@ export const TOWER_TYPES = Object.freeze({
   wind: {
     id: 'wind',
     name: '风爆塔',
-    key: '9',
+    key: '-',
     cost: 300,
     hp: 170,
     range: 3.3,
@@ -289,7 +330,7 @@ export const TOWER_TYPES = Object.freeze({
   light: {
     id: 'light',
     name: '曜辉塔',
-    key: '0',
+    key: '=',
     cost: 1000,
     hp: 115,
     range: 3.2,
@@ -304,7 +345,7 @@ export const TOWER_TYPES = Object.freeze({
   dark: {
     id: 'dark',
     name: '玄蚀塔',
-    key: '-',
+    key: '[',
     cost: 1000,
     hp: 120,
     range: 3.2,
@@ -335,7 +376,18 @@ export const ENEMY_TYPES = Object.freeze({
     size: 0.62,
     height: 0.72,
     color: 0xc4b5fd,
-    accent: 0x7c3aed
+    accent: 0x7c3aed,
+    resistances: {
+      physical: 0.08,
+      magic: 0.08,
+      fire: 0.05,
+      ice: 0.05,
+      lightning: 0.1,
+      wind: 0.05,
+      water: 0.08,
+      light: 0.12,
+      dark: 0.12
+    }
   },
   runner: {
     id: 'runner',
@@ -353,7 +405,18 @@ export const ENEMY_TYPES = Object.freeze({
     size: 0.48,
     height: 0.58,
     color: 0xfdba74,
-    accent: 0xea580c
+    accent: 0xea580c,
+    resistances: {
+      physical: 0.05,
+      magic: 0.2,
+      fire: 0.1,
+      ice: 0.15,
+      lightning: 0.05,
+      wind: 0.1,
+      water: 0.1,
+      light: 0.08,
+      dark: 0.08
+    }
   },
   tank: {
     id: 'tank',
@@ -371,7 +434,18 @@ export const ENEMY_TYPES = Object.freeze({
     size: 0.92,
     height: 0.95,
     color: 0xfca5a5,
-    accent: 0xb91c1c
+    accent: 0xb91c1c,
+    resistances: {
+      physical: 0.45,
+      magic: 0.25,
+      fire: 0.35,
+      ice: 0.35,
+      lightning: 0.3,
+      wind: 0.25,
+      water: 0.3,
+      light: 0.2,
+      dark: 0.2
+    }
   },
   elite: {
     id: 'elite',
@@ -389,7 +463,86 @@ export const ENEMY_TYPES = Object.freeze({
     size: 1.5,
     height: 1.5,
     color: 0xf0abfc,
-    accent: 0xa21caf
+    accent: 0xa21caf,
+    resistanceCap: 0.8,
+    resistances: {
+      physical: 0.65,
+      magic: 0.55,
+      fire: 0.5,
+      ice: 0.7,
+      lightning: 0.55,
+      wind: 0.65,
+      water: 0.5,
+      light: 0.6,
+      dark: 0.7
+    }
+  },
+  bombardier: {
+    id: 'bombardier',
+    name: '投弹兵',
+    hp: 78,
+    speed: 1.25,
+    cost: 4.2,
+    weight: 1.1,
+    reward: 9,
+    interval: 1.8,
+    leak: 2,
+    score: 3,
+    towerDamage: 0,
+    bombard: true,
+    bombInterval: 3.2,
+    bombDamage: 10,
+    bombRadius: 1.55,
+    bombTravel: 0.7,
+    bombRange: 6,
+    detourChance: 0.12,
+    size: 0.86,
+    height: 0.82,
+    color: 0xfbbf24,
+    accent: 0xb45309,
+    resistances: {
+      physical: 0.5,
+      magic: 0.15,
+      fire: 0.2,
+      ice: 0.2,
+      lightning: 0.3,
+      wind: 0.2,
+      water: 0.25,
+      light: 0.1,
+      dark: 0.15
+    }
+  },
+  flyer: {
+    id: 'flyer',
+    name: '飞行者',
+    hp: 60,
+    speed: 1.7,
+    cost: 3.5,
+    weight: 1.2,
+    reward: 8,
+    interval: 1.2,
+    leak: 0,
+    score: 2,
+    towerDamage: 3,
+    flying: true,
+    noLeak: true,
+    altitude: 1.9,
+    detourChance: 0,
+    size: 0.56,
+    height: 0.52,
+    color: 0x93c5fd,
+    accent: 0x1d4ed8,
+    resistances: {
+      physical: 0.1,
+      magic: 0.55,
+      fire: 0.15,
+      ice: 0.2,
+      lightning: 0.45,
+      wind: 0.3,
+      water: 0.2,
+      light: 0.4,
+      dark: 0.35
+    }
   }
 });
 

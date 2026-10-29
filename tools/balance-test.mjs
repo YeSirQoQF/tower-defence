@@ -1,7 +1,7 @@
 ﻿import { generateMap } from '../js/mapgen.js';
 import { generateGiantMap } from '../js/giantmap.js';
 import { createWave, generateWaves, waveTotals } from '../js/waves.js';
-import { DIFFICULTIES, TILE, WAVE_CONFIG } from '../js/config.js';
+import { DIFFICULTIES, ENEMY_TYPES, TILE, TOWER_TYPES, WAVE_CONFIG } from '../js/config.js';
 import {
   addAttachment,
   createStatus,
@@ -10,10 +10,23 @@ import {
   getLightDamageMultiplier,
   getStasisAttackFactor,
   getStasisMovementFactor,
+  getAttachmentHalfLife,
   getWaterAttackModifiers,
   resolveReactions,
   tickScorch
 } from '../js/systems/status.js';
+import {
+  RESISTANCE_KEYS,
+  createResistances,
+  getResistanceMultiplier
+} from '../js/systems/resistance.js';
+import {
+  PULSE_UPGRADE,
+  SUPPLY_UPGRADE,
+  CANNON_UPGRADE,
+  MAGIC_UPGRADE,
+  COIN_UPGRADE
+} from '../js/systems/towers.js';
 
 const SAMPLES = Number(process.argv[2] || 300);
 let failed = false;
@@ -308,7 +321,17 @@ const checkReaction = (name, condition, detail) => {
 };
 
 const annihilation = resolveCase([['light', 1], ['dark', 1]]);
-checkReaction('annihilation', annihilation.events.some((event) => event.type === 'annihilation' && event.damage === 50 && event.selfTrueRatio === 0.2));
+checkReaction(
+  'annihilation',
+  annihilation.events.some(
+    (event) =>
+      event.type === 'annihilation' &&
+      event.damage === 64 &&
+      event.radius === 3.6 &&
+      event.highestTrueRatio === 0.2 &&
+      event.otherTrueRatio === 0.05
+  )
+);
 const scorch = resolveCase([['dark', 1], ['fire', 1]]);
 checkReaction('scorch', scorch.enemy.status.scorch && scorch.events.some((event) => event.type === 'scorch'));
 const drunken = resolveCase([['dark', 1], ['water', 1]]);
@@ -316,13 +339,20 @@ checkReaction('drunken', drunken.enemy.status.drunken && drunken.events.some((ev
 const stasis = resolveCase([['dark', 1], ['ice', 1]]);
 checkReaction('stasis', stasis.enemy.status.stasis && stasis.events.some((event) => event.type === 'stasis'));
 const parallel = resolveCase([['dark', 1], ['lightning', 1]]);
-checkReaction('parallel', parallel.events.some((event) => event.type === 'parallel'));
+checkReaction(
+  'parallel',
+  parallel.events.some((event) => event.type === 'parallel' && event.radius === 2.8)
+);
 const sweep = resolveCase([['dark', 1], ['wind', 1]], (enemy) => {
   enemy.status.scorch = { tickTimer: 0.7 };
   enemy.status.drunken = true;
   enemy.status.stasis = true;
 });
-checkReaction('sweep', sweep.events.some((event) => event.type === 'sweep' && event.debuffs.length === 3));
+checkReaction('sweep', sweep.events.some((event) => event.type === 'sweep' && event.debuffs.length === 3 && event.radius === 3));
+const melt = resolveCase([['fire', 1], ['ice', 1]]);
+checkReaction('melt', melt.events.some((event) => event.type === 'melt' && event.damage === 8));
+const evaporate = resolveCase([['fire', 1], ['water', 1]]);
+checkReaction('evaporate', evaporate.events.some((event) => event.type === 'evaporate' && event.damage === 12));
 
 const lightProtected = makeReactionEnemy();
 addAttachment(lightProtected, 'light', 1);
@@ -334,6 +364,23 @@ checkReaction(
 );
 const water = getWaterAttackModifiers({ status: { attachments: { water: 4 } } });
 checkReaction('water', water.intervalMultiplier === 1.48 && water.damageMultiplier === 0.8);
+const lightHalfLifeEnemy = makeReactionEnemy();
+const darkHalfLifeEnemy = makeReactionEnemy();
+const fireHalfLifeEnemy = makeReactionEnemy();
+addAttachment(lightHalfLifeEnemy, 'light', 1);
+addAttachment(darkHalfLifeEnemy, 'dark', 1);
+addAttachment(fireHalfLifeEnemy, 'fire', 1);
+decayStatus(lightHalfLifeEnemy, 1);
+decayStatus(darkHalfLifeEnemy, 1);
+decayStatus(fireHalfLifeEnemy, 1);
+checkReaction(
+  'light-dark-half-life',
+  getAttachmentHalfLife('light') === 2.5 &&
+    getAttachmentHalfLife('dark') === 2.5 &&
+    getAttachmentHalfLife('fire') === 1 &&
+    lightHalfLifeEnemy.status.attachments.light > fireHalfLifeEnemy.status.attachments.fire &&
+    darkHalfLifeEnemy.status.attachments.dark > fireHalfLifeEnemy.status.attachments.fire
+);
 const light = { status: { attachments: { light: 4 } } };
 checkReaction('light-amp', getLightDamageMultiplier(light) === 1.6);
 const dark = { status: { attachments: { dark: 4 } } };
@@ -341,7 +388,7 @@ checkReaction('dark-reflect', getDarkReflectRatio(dark) === 0.8);
 const stasisEnemy = { status: { stasis: true } };
 checkReaction(
   'stasis-factors',
-  getStasisMovementFactor(stasisEnemy) === 0.3 && getStasisAttackFactor(stasisEnemy) === 0.3
+  getStasisMovementFactor(stasisEnemy) === 0.2 && getStasisAttackFactor(stasisEnemy) === 0.2
 );
 const scorchTickEnemy = makeReactionEnemy();
 scorchTickEnemy.status.scorch = { tickTimer: 0.01 };
@@ -353,6 +400,88 @@ checkReaction('scorch-tick', scorchTickDamage === 7.2);
 
 if (reactionFailures === 0) console.log('all attribute reactions and debuffs passed');
 else console.error(`${reactionFailures} attribute reaction checks failed`);
+
+console.log('\nEnemy resistances\n');
+let resistanceFailures = 0;
+const checkResistance = (name, condition) => {
+  if (!condition) {
+    failed = true;
+    resistanceFailures++;
+    console.error(`  RESISTANCE FAIL ${name}`);
+  }
+};
+for (const [id, type] of Object.entries(ENEMY_TYPES)) {
+  const cap = type.resistanceCap ?? 0.6;
+  for (const wave of [1, 30, 100, 200]) {
+    const resistances = createResistances(type, wave);
+    checkResistance(`${id}@${wave} cap`, Object.values(resistances).every((value) => value <= cap + 1e-9));
+    checkResistance(
+      `${id}@${wave} pair`,
+      resistances.physical + resistances.magic <= 1.4 + 1e-9
+    );
+    checkResistance(
+      `${id}@${wave} attributes`,
+      !RESISTANCE_KEYS.every((key) => resistances[key] > 0.6)
+    );
+    if (id === 'tank') {
+      checkResistance(
+        `${id}@${wave} minimum`,
+        resistances.physical >= 0.05 && resistances.magic >= 0.05
+      );
+    }
+  }
+}
+const resistanceSample = { resistances: { physical: 0.5, magic: 0.2, fire: 0.25 } };
+checkResistance(
+  'damage-multiplier',
+  Math.abs(getResistanceMultiplier(resistanceSample, 'physical', 'fire') - 0.375) < 1e-9
+);
+if (resistanceFailures === 0) console.log('all enemy resistance constraints passed');
+
+const upgradeChecks = [
+  ['pulse', PULSE_UPGRADE.costs.length, PULSE_UPGRADE.maxLevel],
+  ['supply', SUPPLY_UPGRADE.costs.length, SUPPLY_UPGRADE.maxLevel],
+  ['cannon', CANNON_UPGRADE.costs.length, CANNON_UPGRADE.maxLevel],
+  ['magic', MAGIC_UPGRADE.costs.length, MAGIC_UPGRADE.maxLevel],
+  ['coin', COIN_UPGRADE.costs.length, COIN_UPGRADE.maxLevel]
+];
+for (const [name, costCount, maxLevel] of upgradeChecks) {
+  if (costCount !== maxLevel - 1) {
+    failed = true;
+    console.error(`  UPGRADE FAIL ${name}: costs ${costCount}, maxLevel ${maxLevel}`);
+  }
+}
+const sumCosts = (costs) => costs.reduce((sum, cost) => sum + cost, 0);
+const pulseTotal = TOWER_TYPES.gun.cost + sumCosts(PULSE_UPGRADE.costs);
+const supplyTotal = TOWER_TYPES.supply.cost + sumCosts(SUPPLY_UPGRADE.costs);
+const magicTotal = TOWER_TYPES.magic.cost + sumCosts(MAGIC_UPGRADE.costs);
+if (pulseTotal > 24000) {
+  failed = true;
+  console.error(`  BUDGET FAIL pulse ${pulseTotal}`);
+}
+if (supplyTotal > 12000) {
+  failed = true;
+  console.error(`  BUDGET FAIL supply ${supplyTotal}`);
+}
+if (magicTotal > 3000) {
+  failed = true;
+  console.error(`  BUDGET FAIL magic ${magicTotal}`);
+}
+if (COIN_UPGRADE.maxLevel !== 20 || COIN_UPGRADE.costs[14] !== 100) {
+  failed = true;
+  console.error('  UPGRADE FAIL coin level/cost');
+}
+if (SUPPLY_UPGRADE.critChanceCap !== 1 || SUPPLY_UPGRADE.maxCritTier !== 3) {
+  failed = true;
+  console.error('  UPGRADE FAIL crit cap/tier');
+}
+if (PULSE_UPGRADE.rangePerLevel < 0.2 || CANNON_UPGRADE.rangePerLevel < 0.12) {
+  failed = true;
+  console.error('  UPGRADE FAIL pulse/cannon range growth');
+}
+console.log(
+  `budgets · pulse ${pulseTotal} · supply ${supplyTotal} · magic ${magicTotal} · coin Lv.${COIN_UPGRADE.maxLevel} (15→16 ${COIN_UPGRADE.costs[14]})`
+);
 
 console.log(`\nResult: ${failed ? 'FAILED' : 'PASSED'}\n`);
 process.exit(failed ? 1 : 0);

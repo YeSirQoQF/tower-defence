@@ -315,7 +315,7 @@ select {
   z-index: 5;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   pointer-events: auto;
 }
 
@@ -325,8 +325,8 @@ select {
   align-items: center;
   gap: 8px;
   width: 158px;
-  height: 46px;
-  padding: 7px 10px;
+  height: 40px;
+  padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--panel);
@@ -991,12 +991,12 @@ html.file-protocol #site-footer {
 }
 
 .tp-upgrades {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
   gap: 6px;
 }
 
 .tp-upgrade {
-  flex: 1;
   min-width: 0;
   padding: 7px 8px;
   border: 1px solid var(--border);
@@ -1129,8 +1129,8 @@ html.file-protocol #site-footer {
 
   .tower-card {
     width: 118px;
-    height: 42px;
-    padding: 6px 8px;
+    height: 38px;
+    padding: 5px 8px;
   }
 
   .tower-name {
@@ -1197,33 +1197,33 @@ html.file-protocol #site-footer {
   }
 }
 
-@media (max-height: 700px) {
-  #tower-bar {
-    gap: 4px;
-  }
-
-  .tower-card {
-    height: 38px;
-    padding: 5px 8px;
-  }
-
-  .tower-name {
-    font-size: 10.5px;
-  }
-
-  .tower-cost {
-    font-size: 11px;
-  }
-}
-
-@media (max-height: 560px) {
+@media (max-height: 680px) {
   #tower-bar {
     gap: 3px;
   }
 
   .tower-card {
-    height: 32px;
-    padding: 4px 7px;
+    height: 30px;
+    padding: 4px 8px;
+  }
+
+  .tower-name {
+    font-size: 10px;
+  }
+
+  .tower-cost {
+    font-size: 10.5px;
+  }
+}
+
+@media (max-height: 560px) {
+  #tower-bar {
+    gap: 2px;
+  }
+
+  .tower-card {
+    height: 26px;
+    padding: 3px 7px;
   }
 
   .tower-key {
@@ -1235,7 +1235,7 @@ html.file-protocol #site-footer {
   }
 
   .tower-cost {
-    font-size: 10px;
+    font-size: 9.5px;
   }
 
   .tower-dot {

@@ -14,14 +14,24 @@ import { generateGiantMap } from './giantmap.js';
 import { createWave, generateWaves, waveTotals, waveSummary } from './waves.js';
 import { makeRng, randomSeed } from './rng.js';
 import { buildPathGraph, findRoute } from './systems/pathfinding.js';
+import { createResistances, getResistanceMultiplier } from './systems/resistance.js';
 import {
   baseTowerStats,
   resolvePulseStats,
   resolveSupplyStats,
+  resolveCannonStats,
+  resolveMagicStats,
+  resolveCoinStats,
+  CANNON_UPGRADE,
+  MAGIC_UPGRADE,
+  COIN_UPGRADE,
   PULSE_UPGRADE,
   SUPPLY_UPGRADE,
   pulseUpgradeCost,
-  supplyUpgradeCost
+  supplyUpgradeCost,
+  cannonUpgradeCost,
+  magicUpgradeCost,
+  coinUpgradeCost
 } from './systems/towers.js';
 import {
   addAttachment,
@@ -40,6 +50,9 @@ import {
   SCORCH_TICK_SECONDS,
   SHOCK_DAMAGE_BASE,
   SPREAD_RADIUS_CELLS,
+  SWEEP_VORTEX_DAMAGE,
+  SWEEP_VORTEX_TICKS,
+  SWEEP_VORTEX_TICK_SECONDS,
   tickBuffs,
   tickBurning,
   tickLightning,
@@ -404,6 +417,63 @@ function makeTowerModel(type) {
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.28;
     head.add(ring);
+  } else if (type.id === 'coin') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.4, 0.36, 8), darkMaterial);
+    body.position.y = 0.18;
+    body.castShadow = true;
+    head.add(body);
+    const coinMaterial = new THREE.MeshStandardMaterial({
+      color: 0xfef08a,
+      emissive: type.color,
+      emissiveIntensity: 1.8,
+      roughness: 0.2,
+      metalness: 0.85,
+      flatShading: true
+    });
+    const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.09, 24), coinMaterial);
+    coin.rotation.z = Math.PI / 2;
+    coin.position.y = 0.92;
+    coin.castShadow = true;
+    head.add(coin);
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.35, 0.035, 6, 24),
+      new THREE.MeshBasicMaterial({ color: type.color, transparent: true, opacity: 0.85 })
+    );
+    rim.rotation.y = Math.PI / 2;
+    rim.position.y = 0.92;
+    head.add(rim);
+    const halo = new THREE.Mesh(
+      new THREE.TorusGeometry(0.42, 0.025, 6, 24),
+      new THREE.MeshBasicMaterial({ color: type.color, transparent: true, opacity: 0.45 })
+    );
+    halo.rotation.x = Math.PI / 2;
+    halo.position.y = 0.42;
+    head.add(halo);
+  } else if (type.id === 'cursed') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.48, 0.5, 6), darkMaterial);
+    body.position.y = 0.25;
+    body.castShadow = true;
+    head.add(body);
+    const coreMaterial = new THREE.MeshStandardMaterial({
+      color: 0x4c1d95,
+      emissive: type.color,
+      emissiveIntensity: 1.7,
+      roughness: 0.2,
+      metalness: 0.3,
+      flatShading: true
+    });
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.3, 0), coreMaterial);
+    core.position.y = 0.82;
+    core.castShadow = true;
+    head.add(core);
+    for (let i = 0; i < 4; i++) {
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.42, 4), coreMaterial);
+      const angle = (i / 4) * Math.PI * 2;
+      spike.position.set(Math.cos(angle) * 0.38, 0.74, Math.sin(angle) * 0.38);
+      spike.rotation.z = Math.PI / 2;
+      spike.rotation.y = angle;
+      head.add(spike);
+    }
   } else {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.44, 0.5, 8), darkMaterial);
     body.position.y = 0.25;
@@ -456,6 +526,10 @@ function enemyBodyGeometry(type) {
     geometry = new THREE.OctahedronGeometry(type.size * 0.56, 0);
   } else if (type.id === 'tank') {
     geometry = new THREE.BoxGeometry(type.size, type.height * 0.82, type.size);
+  } else if (type.id === 'bombardier') {
+    geometry = new THREE.CapsuleGeometry(type.size * 0.36, type.size * 0.5, 4, 8);
+  } else if (type.id === 'flyer') {
+    geometry = new THREE.ConeGeometry(type.size * 0.48, type.height, 6);
   } else {
     geometry = new THREE.IcosahedronGeometry(type.size * 0.56, 0);
   }
@@ -494,6 +568,38 @@ function makeEnemyModel(type) {
     group.add(core);
   }
 
+  if (type.id === 'bombardier') {
+    const pack = new THREE.Mesh(
+      new THREE.BoxGeometry(type.size * 0.65, type.height * 0.42, type.size * 0.4),
+      new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7, metalness: 0.35 })
+    );
+    pack.position.set(0, type.height * 0.75, -0.16);
+    pack.castShadow = true;
+    group.add(pack);
+    const barrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(type.size * 0.12, type.size * 0.17, type.size * 0.75, 8),
+      material
+    );
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, type.height * 0.65, type.size * 0.5);
+    group.add(barrel);
+  }
+
+  if (type.id === 'flyer') {
+    const wingMaterial = new THREE.MeshBasicMaterial({
+      color: 0xbfdbfe,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide
+    });
+    for (const side of [-1, 1]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(type.size * 1.4, 0.04, type.size * 0.55), wingMaterial);
+      wing.position.set(side * type.size * 0.62, type.height * 0.55, 0);
+      wing.rotation.z = side * 0.22;
+      group.add(wing);
+    }
+  }
+
   group.userData.body = body;
   return { group, material, body };
 }
@@ -518,7 +624,11 @@ export class Game {
     this.waveIndex = 0;
     this.phase = 'build';
     this.gold = this.diff.startGold;
+    this.maxLives = this.diff.lives;
     this.lives = this.diff.lives;
+    this.repairCount = 0;
+    this.repairCooldown = 0;
+    this.repairHpMultiplier = 1;
     this.score = 0;
     this.kills = 0;
     this.built = 0;
@@ -529,6 +639,8 @@ export class Game {
     this.towerPanelTower = null;
     this.towerPanelHtml = '';
     this.magicCasts = [];
+    this.enemyBombs = [];
+    this.sweepVortices = [];
     this.helpOpen = false;
     this.prepRemaining = Infinity;
     this.prepTotal = Infinity;
@@ -1348,22 +1460,44 @@ export class Game {
             : '无属性附着';
         const support = !!type.support;
         const magic = !!type.magicTower;
+        const cursed = !!type.curseTower;
+        const coin = !!type.coinTower;
         let rows;
         if (support) {
           rows = `
               <span><i>光环范围</i><b>${type.auraRange} 格</b></span>
               <span><i>基础治疗</i><b>${SUPPLY_UPGRADE.healBase} HP/s</b></span>
               <span><i>生命</i><b>${type.hp}</b></span>
-              <span><i>升级</i><b>3 条分支</b></span>`;
+              <span><i>升级</i><b>5 条分支</b></span>`;
+        } else if (coin) {
+          rows = `
+              <span><i>金币产量</i><b>${type.income} / ${type.incomeInterval}s</b></span>
+              <span><i>生命</i><b>${type.hp}</b></span>
+              <span><i>升级</i><b>提高生产频率</b></span>`;
+        } else if (cursed) {
+          rows = `
+              <span><i>每段伤害</i><b>${type.damage}</b></span>
+              <span><i>射速</i><b>${type.fireRate.toFixed(2)}/s</b></span>
+              <span><i>射程</i><b>${type.range.toFixed(1)} 格</b></span>
+              <span><i>识别范围</i><b>${type.recognizeRange} 格</b></span>
+              <span><i>连发</i><b>${type.pickCount} 段</b></span>
+              <span><i>反应易伤</i><b>30% / 6层</b></span>
+              <span><i>末段耗血</i><b>${Math.round(type.hpConsumeRatio * 100)}%</b></span>
+              <span><i>耗血增伤</i><b>×${type.damagePerHp}</b></span>
+              <span><i>伤害类型</i><b>${damageType}</b></span>
+              <span><i>升级</i><b>暂未开放</b></span>`;
         } else if (magic) {
           rows = `
               <span><i>每次伤害</i><b>${type.damage}</b></span>
               <span><i>射速</i><b>${type.fireRate.toFixed(2)}/s</b></span>
               <span><i>射程</i><b>${type.range.toFixed(1)} 格</b></span>
               <span><i>连发次数</i><b>${type.pickCount} 次</b></span>
+              <span><i>属性识别</i><b>${type.recognizeRange} 格</b></span>
               <span><i>属性范围</i><b>${type.splash} 格</b></span>
               <span><i>生命</i><b>${type.hp}</b></span>
-              <span><i>伤害类型</i><b>${damageType}</b></span>`;
+              <span><i>伤害类型</i><b>${damageType}</b></span>
+              <span><i>反应易伤</i><b>每级 +5%</b></span>
+              <span><i>升级</i><b>Lv.10</b></span>`;
         } else {
           rows = `
               <span><i>伤害</i><b>${type.damage}</b></span>
@@ -1377,10 +1511,14 @@ export class Game {
               ${type.element === 'ice' ? `<span><i>冰减速</i><b>每层 −${(ICE_SLOW_PER_LAYER * 100).toFixed(1)}%</b></span>` : ''}`;
         }
         const tags = support
-          ? '可升级：强化范围 / 攻击 / 生命与治疗'
+          ? '可升级：范围 / 攻击 / 生命 / 攻速 / 暴击'
           : magic
-            ? '抽取范围内属性塔的属性 · 每次攻击 3 连发'
-            : elementAttach;
+            ? '可升级：反应易伤每级 +5% · 与诅咒塔共享20层 · 3 连发'
+            : cursed
+              ? '识别2格内属性塔 · 7段魔法范围伤害 · 反应易伤30%（6层，与魔法塔共享20层）'
+              : coin
+                ? '周期性生产金币 · 可升级'
+                : elementAttach;
         return `
         <button class="tower-card" data-type="${type.id}">
           <span class="tower-key">${type.key}</span>
@@ -1596,6 +1734,41 @@ export class Game {
   togglePause() {
     if (this.helpOpen || (this.phase !== 'build' && this.phase !== 'combat')) return;
     this.paused = !this.paused;
+    this.updateHud();
+  }
+
+  getRepairCost() {
+    const inCombat = this.enemies.length > 0 || this.spawnQueue.length > 0;
+    return Math.round(
+      (80 + this.waveIndex * 15 + this.repairCount * this.repairCount * 50) *
+      (inCombat ? 1.5 : 1)
+    );
+  }
+
+  tryRepairBase() {
+    if (this.phase !== 'build' && this.phase !== 'combat') return;
+    if (this.lives >= this.maxLives) {
+      this.toast('基地生命已满');
+      return;
+    }
+    if (this.repairCooldown > 0) {
+      this.toast(`基地维修冷却 ${Math.ceil(this.repairCooldown)} 秒`);
+      return;
+    }
+    const cost = this.getRepairCost();
+    if (this.gold < cost) {
+      this.toast(`金币不足 · 维修需要 ${cost} 金`);
+      return;
+    }
+
+    this.gold -= cost;
+    this.lives = Math.min(this.maxLives, this.lives + 1);
+    this.repairCount++;
+    this.repairCooldown = 30;
+    this.repairHpMultiplier *= 1.01;
+    const basePos = this.cellToWorld(this.map.goal.x, this.map.goal.y);
+    this.castEffect(basePos, 0x4ade80, 3.2, 0.6);
+    this.toast(`基地维修 +1 · ${cost} 金 · 后续敌人生命 +1%`);
     this.updateHud();
   }
 
@@ -1823,6 +1996,15 @@ export class Game {
     const cell = this.cellFromWorld(this.tmpPoint);
     if (!cell) return;
 
+    const basePos = this.cellToWorld(this.map.goal.x, this.map.goal.y);
+    if (
+      event.button === 0 &&
+      Math.hypot(this.tmpPoint.x - basePos.x, this.tmpPoint.z - basePos.z) <= TILE_SIZE * 1.7
+    ) {
+      this.tryRepairBase();
+      return;
+    }
+
     if (event.button === 2) {
       event.preventDefault();
       const tower = this.towerAt(cell.x, cell.y);
@@ -1857,7 +2039,7 @@ export class Game {
       event.preventDefault();
       return;
     }
-    if (['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-'].includes(key)) {
+    if (['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '['].includes(key)) {
       const type = Object.values(TOWER_TYPES).find((tower) => tower.key === key);
       if (type) this.selectTowerType(type.id);
     } else if (key === 'Escape') {
@@ -1917,6 +2099,8 @@ export class Game {
       rangeStacks: 0,
       attackStacks: 0,
       vitalityStacks: 0,
+      hasteStacks: 0,
+      critTier: 0,
       hp: type.hp || 100,
       maxHp: type.hp || 100,
       healTimer: 0,
@@ -1990,9 +2174,14 @@ export class Game {
         tower.level,
         tower.rangeStacks,
         tower.attackStacks,
-        tower.vitalityStacks
+        tower.vitalityStacks,
+        tower.hasteStacks,
+        tower.critTier
       );
     }
+    if (tower.type.id === 'cannon') return resolveCannonStats(tower.type, tower.level);
+    if (tower.type.id === 'magic') return resolveMagicStats(tower.type, tower.level);
+    if (tower.type.id === 'coin') return resolveCoinStats(tower.type, tower.level);
     return baseTowerStats({ ...tower.type, level: tower.level });
   }
 
@@ -2004,7 +2193,9 @@ export class Game {
         supply.level,
         supply.rangeStacks,
         supply.attackStacks,
-        supply.vitalityStacks
+        supply.vitalityStacks,
+        supply.hasteStacks,
+        supply.critTier
       );
     }
 
@@ -2012,6 +2203,9 @@ export class Game {
       let rangeBonus = 0;
       let attackBonus = 0;
       let hpBonus = 0;
+      let hasteBonus = 0;
+      let critChance = 0;
+      let critDamage = 0;
 
       for (const supply of supplies) {
         const aura = supply.stats.auraRange * TILE_SIZE;
@@ -2021,6 +2215,9 @@ export class Game {
         rangeBonus += supply.rangeStacks * SUPPLY_UPGRADE.rangeBuffPerStack;
         attackBonus += supply.attackStacks * SUPPLY_UPGRADE.attackBuffPerStack;
         hpBonus += supply.vitalityStacks * SUPPLY_UPGRADE.maxHpBuffPerStack;
+        hasteBonus += supply.hasteStacks * SUPPLY_UPGRADE.hastePerStack;
+        critChance += SUPPLY_UPGRADE.critChanceTiers[supply.critTier] || 0;
+        critDamage += SUPPLY_UPGRADE.critDamageTiers[supply.critTier] || 0;
       }
 
       const oldMax = tower.maxHp;
@@ -2028,6 +2225,9 @@ export class Game {
       if (!tower.type.support) {
         stats.range += Math.min(rangeBonus, SUPPLY_UPGRADE.rangeBuffCap);
         stats.damage *= 1 + Math.min(attackBonus, SUPPLY_UPGRADE.attackBuffCap);
+        stats.fireRate *= 1 + Math.min(hasteBonus, SUPPLY_UPGRADE.hasteBuffCap);
+        stats.critChance = Math.min(critChance, SUPPLY_UPGRADE.critChanceCap);
+        stats.critDamage = Math.min(critDamage, SUPPLY_UPGRADE.critDamageCap);
       }
       tower.stats = stats;
       tower.maxHp = Math.max(
@@ -2112,6 +2312,28 @@ export class Game {
       rows.push(`<span><i>增幅层数</i><b>${tower.rangeStacks}</b></span>`);
       rows.push(`<span><i>过载层数</i><b>${tower.attackStacks}</b></span>`);
       rows.push(`<span><i>生命回路</i><b>${tower.vitalityStacks}</b></span>`);
+      rows.push(`<span><i>迅捷层数</i><b>${tower.hasteStacks}</b></span>`);
+      rows.push(`<span><i>致命等级</i><b>${tower.critTier}</b></span>`);
+    } else if (tower.type.coinTower) {
+      rows.push(`<span><i>金币产量</i><b>${stats.income} / ${stats.incomeInterval.toFixed(2)}s</b></span>`);
+      rows.push(`<span><i>等价收益</i><b>${(stats.income / stats.incomeInterval).toFixed(2)}/s</b></span>`);
+    } else if (tower.type.curseTower) {
+      rows.push(`<span><i>每段伤害</i><b>${stats.damage.toFixed(1)}</b></span>`);
+      rows.push(`<span><i>射速</i><b>${stats.fireRate.toFixed(2)}/s</b></span>`);
+      rows.push(`<span><i>射程</i><b>${stats.range.toFixed(1)} 格</b></span>`);
+      rows.push(`<span><i>识别范围</i><b>${tower.type.recognizeRange} 格</b></span>`);
+      rows.push(`<span><i>连发</i><b>${tower.type.pickCount} 段</b></span>`);
+      rows.push(`<span><i>反应易伤</i><b>30% / 6层</b></span>`);
+      rows.push(`<span><i>末段耗血</i><b>${Math.round(tower.type.hpConsumeRatio * 100)}%</b></span>`);
+      rows.push(`<span><i>耗血增伤</i><b>×${tower.type.damagePerHp}</b></span>`);
+      rows.push(`<span><i>伤害类型</i><b>魔法</b></span>`);
+    } else if (tower.type.magicTower) {
+      rows.push(`<span><i>每段伤害</i><b>${stats.damage.toFixed(1)}</b></span>`);
+      rows.push(`<span><i>射速</i><b>${stats.fireRate.toFixed(2)}/s</b></span>`);
+      rows.push(`<span><i>射程</i><b>${stats.range.toFixed(1)} 格</b></span>`);
+      rows.push(`<span><i>属性识别</i><b>${tower.type.recognizeRange} 格</b></span>`);
+      rows.push(`<span><i>连发次数</i><b>${tower.type.pickCount} 次</b></span>`);
+      rows.push(`<span><i>反应增伤</i><b>${Math.round((stats.reactionAmp || 0) * 100)}%</b></span>`);
     } else {
       rows.push(`<span><i>伤害</i><b>${stats.damage.toFixed(1)}</b></span>`);
       rows.push(`<span><i>射速</i><b>${stats.fireRate.toFixed(2)}/s</b></span>`);
@@ -2122,8 +2344,11 @@ export class Game {
         rows.push(`<span><i>穿透数</i><b>${tower.pierce}</b></span>`);
       }
       if (stats.splash) {
-        rows.push(`<span><i>爆炸半径</i><b>${stats.splash} 格</b></span>`);
+        rows.push(`<span><i>爆炸半径</i><b>${stats.splash.toFixed(2)} 格</b></span>`);
       }
+    }
+    if (!support && !tower.type.coinTower && stats.critChance > 0) {
+      rows.push(`<span><i>暴击</i><b>${Math.round(stats.critChance * 100)}% / ${Math.round(stats.critDamage * 100)}%</b></span>`);
     }
 
     let upgradeBlock = '<div class="tp-note">该塔暂未开放升级</div>';
@@ -2135,7 +2360,7 @@ export class Game {
         <div class="tp-upgrades">
           <button class="tp-upgrade" data-action="overclock" ${disabled ? 'disabled' : ''}>
             <strong>超频 · ${tower.overclock}</strong>
-            <small>射击频率 +8%</small>
+            <small>射击频率 +5%</small>
             <span class="tp-cost">${cost === null ? '已满级' : `${cost} 金`}</span>
           </button>
           <button class="tp-upgrade" data-action="pierce" ${disabled ? 'disabled' : ''}>
@@ -2147,6 +2372,16 @@ export class Game {
     } else if (support) {
       const cost = supplyUpgradeCost(tower);
       const disabled = cost === null || this.gold < cost;
+      const critDisabled = disabled || tower.critTier >= SUPPLY_UPGRADE.maxCritTier;
+      const critNowChance = SUPPLY_UPGRADE.critChanceTiers[tower.critTier] || 0;
+      const critNowDamage = SUPPLY_UPGRADE.critDamageTiers[tower.critTier] || 0;
+      const nextCritTier = Math.min(SUPPLY_UPGRADE.maxCritTier, tower.critTier + 1);
+      const critNextChance = SUPPLY_UPGRADE.critChanceTiers[nextCritTier] || 0;
+      const critNextDamage = SUPPLY_UPGRADE.critDamageTiers[nextCritTier] || 0;
+      const critText =
+        tower.critTier >= SUPPLY_UPGRADE.maxCritTier
+          ? `当前 ${Math.round(critNowChance * 100)}%/${Math.round(critNowDamage * 100)}%（已满）`
+          : `当前 ${Math.round(critNowChance * 100)}%/${Math.round(critNowDamage * 100)}% → 下一级 ${Math.round(critNextChance * 100)}%/${Math.round(critNextDamage * 100)}%`;
       upgradeBlock = `
         <div class="tp-section-title">选择强化方向</div>
         <div class="tp-upgrades">
@@ -2163,6 +2398,52 @@ export class Game {
           <button class="tp-upgrade" data-action="vitality" ${disabled ? 'disabled' : ''}>
             <strong>生命回路 · ${tower.vitalityStacks}</strong>
             <small>治疗 +2，生命上限 +12%</small>
+            <span class="tp-cost">${cost === null ? '已满级' : `${cost} 金`}</span>
+          </button>
+          <button class="tp-upgrade" data-action="haste" ${disabled ? 'disabled' : ''}>
+            <strong>迅捷 · ${tower.hasteStacks}</strong>
+            <small>光环内攻击塔攻频 +5%</small>
+            <span class="tp-cost">${cost === null ? '已满级' : `${cost} 金`}</span>
+          </button>
+          <button class="tp-upgrade" data-action="crit" ${critDisabled ? 'disabled' : ''}>
+            <strong>致命 · ${tower.critTier}</strong>
+            <small>${critText}</small>
+            <span class="tp-cost">${tower.critTier >= SUPPLY_UPGRADE.maxCritTier ? '已满级' : `${cost} 金`}</span>
+          </button>
+        </div>`;
+    } else if (tower.type.id === 'cannon') {
+      const cost = cannonUpgradeCost(tower);
+      const disabled = cost === null || this.gold < cost;
+      upgradeBlock = `
+        <div class="tp-section-title">升级</div>
+        <div class="tp-upgrades">
+          <button class="tp-upgrade" data-action="upgrade" ${disabled ? 'disabled' : ''}>
+            <strong>强化 · Lv.${tower.level}</strong>
+            <small>伤害提高，射程/爆炸半径增加</small>
+            <span class="tp-cost">${cost === null ? '已满级' : `${cost} 金`}</span>
+          </button>
+        </div>`;
+    } else if (tower.type.magicTower) {
+      const cost = magicUpgradeCost(tower);
+      const disabled = cost === null || this.gold < cost;
+      upgradeBlock = `
+        <div class="tp-section-title">升级</div>
+        <div class="tp-upgrades">
+          <button class="tp-upgrade" data-action="upgrade" ${disabled ? 'disabled' : ''}>
+            <strong>增幅 · Lv.${tower.level}</strong>
+            <small>射程内敌人受到的属性反应伤害 +5%</small>
+            <span class="tp-cost">${cost === null ? '已满级' : `${cost} 金`}</span>
+          </button>
+        </div>`;
+    } else if (tower.type.coinTower) {
+      const cost = coinUpgradeCost(tower);
+      const disabled = cost === null || this.gold < cost;
+      upgradeBlock = `
+        <div class="tp-section-title">升级</div>
+        <div class="tp-upgrades">
+          <button class="tp-upgrade" data-action="upgrade" ${disabled ? 'disabled' : ''}>
+            <strong>增产 · Lv.${tower.level}</strong>
+            <small>金币生产频率提高</small>
             <span class="tp-cost">${cost === null ? '已满级' : `${cost} 金`}</span>
           </button>
         </div>`;
@@ -2199,7 +2480,17 @@ export class Game {
       valid = action === 'overclock' || action === 'pierce';
     } else if (tower.type.support) {
       cost = supplyUpgradeCost(tower);
-      valid = action === 'range' || action === 'attack' || action === 'vitality';
+      valid = ['range', 'attack', 'vitality', 'haste', 'crit'].includes(action);
+      if (action === 'crit' && tower.critTier >= SUPPLY_UPGRADE.maxCritTier) return;
+    } else if (tower.type.id === 'cannon') {
+      cost = cannonUpgradeCost(tower);
+      valid = action === 'upgrade';
+    } else if (tower.type.magicTower) {
+      cost = magicUpgradeCost(tower);
+      valid = action === 'upgrade';
+    } else if (tower.type.coinTower) {
+      cost = coinUpgradeCost(tower);
+      valid = action === 'upgrade';
     }
     if (!valid) return;
     if (cost === null) {
@@ -2219,6 +2510,8 @@ export class Game {
     else if (action === 'range') tower.rangeStacks++;
     else if (action === 'attack') tower.attackStacks++;
     else if (action === 'vitality') tower.vitalityStacks++;
+    else if (action === 'haste') tower.hasteStacks++;
+    else if (action === 'crit') tower.critTier++;
 
     this.recomputeTowerAuras();
     if (this.selectedTower === tower) {
@@ -2231,6 +2524,21 @@ export class Game {
 
   findTowerInContact(enemy) {
     const rangeSq = (1.4 * TILE_SIZE) ** 2;
+    let best = null;
+    let bestDist = Infinity;
+    for (const tower of this.towers) {
+      const dx = tower.mesh.position.x - enemy.mesh.position.x;
+      const dz = tower.mesh.position.z - enemy.mesh.position.z;
+      const dist = dx * dx + dz * dz;
+      if (dist > rangeSq || dist >= bestDist) continue;
+      bestDist = dist;
+      best = tower;
+    }
+    return best;
+  }
+
+  findTowerInRange(enemy, rangeCells) {
+    const rangeSq = (rangeCells * TILE_SIZE) ** 2;
     let best = null;
     let bestDist = Infinity;
     for (const tower of this.towers) {
@@ -2373,6 +2681,7 @@ export class Game {
 
     const summary = waveSummary(wave);
     const totals = waveTotals(wave);
+    totals.hp = Math.round(totals.hp * this.repairHpMultiplier);
     this.dom.wavePreview.innerHTML =
       summary
         .map(
@@ -2507,7 +2816,8 @@ export class Game {
       wave,
       pending: totalCount,
       alive: 0,
-      complete: false
+      complete: false,
+      repairHpMultiplier: this.repairHpMultiplier
     });
 
     let sequence = 0;
@@ -2550,37 +2860,60 @@ export class Game {
     const wave = this.waves[effectiveWaveIndex] || this.waves[0];
     const type = ENEMY_TYPES[typeId];
     const model = makeEnemyModel(type);
-    const hp = type.hp * wave.hpMul;
+    const state = this.waveStates.get(effectiveWaveIndex);
+    const hp = type.hp * wave.hpMul * (state?.repairHpMultiplier ?? this.repairHpMultiplier);
     const spawn = this.map.spawns[spawnIndex % this.map.spawns.length];
     if (!spawn) {
       this.failSpawn(effectiveWaveIndex);
       return;
     }
-    const startIndex = this.pathGraph.indexAt[spawn.y * this.map.W + spawn.x];
-    if (startIndex < 0) {
-      this.failSpawn(effectiveWaveIndex);
-      return;
-    }
+    let routePoints;
+    let routeTotal;
+    if (type.flying) {
+      const start = this.cellToWorld(spawn.x, spawn.y);
+      const center = this.cellToWorld((this.map.W - 1) / 2, (this.map.H - 1) / 2);
+      const end = {
+        x: clamp(center.x * 2 - start.x + (this.rng() * 2 - 1) * TILE_SIZE * 3, TILE_SIZE * 2, (this.map.W - 2) * TILE_SIZE),
+        z: clamp(center.z * 2 - start.z + (this.rng() * 2 - 1) * TILE_SIZE * 3, TILE_SIZE * 2, (this.map.H - 2) * TILE_SIZE)
+      };
+      const distance = Math.hypot(end.x - start.x, end.z - start.z);
+      const steps = Math.max(2, Math.ceil(distance / TILE_SIZE));
+      routePoints = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        routePoints.push(new THREE.Vector3(
+          start.x + (end.x - start.x) * t,
+          0,
+          start.z + (end.z - start.z) * t
+        ));
+      }
+      routeTotal = (routePoints.length - 1) * TILE_SIZE;
+    } else {
+      const startIndex = this.pathGraph.indexAt[spawn.y * this.map.W + spawn.x];
+      if (startIndex < 0) {
+        this.failSpawn(effectiveWaveIndex);
+        return;
+      }
 
-    const detour = this.rng() < (type.detourChance || 0);
-    let route = findRoute(this.pathGraph, startIndex, this.rng, {
-      detour,
-      detourWeight: 2.2
-    });
-    if (!route) {
-      route = findRoute(this.pathGraph, startIndex, this.rng, { detour: false });
-    }
-    if (!route || route.length < 2) {
-      this.failSpawn(effectiveWaveIndex);
-      return;
-    }
+      const detour = this.rng() < (type.detourChance || 0);
+      let route = findRoute(this.pathGraph, startIndex, this.rng, {
+        detour,
+        detourWeight: 2.2
+      });
+      if (!route) {
+        route = findRoute(this.pathGraph, startIndex, this.rng, { detour: false });
+      }
+      if (!route || route.length < 2) {
+        this.failSpawn(effectiveWaveIndex);
+        return;
+      }
 
-    const routePoints = route.map((index) => {
-      const cell = this.pathGraph.cells[index];
-      return this.cellToWorld(cell.x, cell.y);
-    });
-    const routeTotal = (routePoints.length - 1) * TILE_SIZE;
-    const state = this.waveStates.get(effectiveWaveIndex);
+      routePoints = route.map((index) => {
+        const cell = this.pathGraph.cells[index];
+        return this.cellToWorld(cell.x, cell.y);
+      });
+      routeTotal = (routePoints.length - 1) * TILE_SIZE;
+    }
     if (state) {
       if (state.pending > 0) state.pending--;
       state.alive++;
@@ -2615,7 +2948,6 @@ export class Game {
       hp,
       maxHp: hp,
       baseSpeed: type.speed * wave.speedMul * TILE_SIZE,
-      route,
       routePoints,
       routeTotal,
       routeDist: 0,
@@ -2626,17 +2958,20 @@ export class Game {
       towerAttackTimer: 0.8 + this.rng() * 0.8,
       reward: Math.round(type.reward * wave.rewardMul),
       status: createStatus(),
-      damageTakenMul: { physical: 1, magic: 1 },
+      resistances: createResistances(type, wave.index || effectiveWaveIndex + 1),
+      altitude: type.altitude || 0.14,
+      noLeak: !!type.noLeak,
       flash: 0,
       age: 0,
       dead: false,
-      leaked: false
+      leaked: false,
+      retired: false
     };
 
     const dir = this.tmpDir.subVectors(routePoints[1], routePoints[0]).normalize();
     const px = routePoints[0].x - dir.z * enemy.offset;
     const pz = routePoints[0].z + dir.x * enemy.offset;
-    enemy.mesh.position.set(px, 0.14, pz);
+    enemy.mesh.position.set(px, enemy.altitude, pz);
     enemy.mesh.rotation.y = Math.atan2(dir.x, dir.z);
     enemy.mesh.scale.setScalar(0.25);
     this.scene.add(enemy.mesh);
@@ -2675,8 +3010,15 @@ export class Game {
     const damageType = packet.damageType || 'physical';
     let finalAmount = amount;
     if (!packet.trueDamage) {
-      const multiplier = (enemy.damageTakenMul && enemy.damageTakenMul[damageType]) || 1;
-      finalAmount *= multiplier * getLightDamageMultiplier(enemy);
+      let crit = false;
+      if (packet.critChance && this.rng() < packet.critChance) {
+        finalAmount *= 1 + (packet.critDamage || 0);
+        crit = true;
+      }
+      finalAmount *= getResistanceMultiplier(enemy, damageType, packet.element);
+      finalAmount *= getLightDamageMultiplier(enemy);
+      if (packet.reaction) finalAmount *= this.getReactionVulnerabilityMultiplier(enemy);
+      if (crit) this.castEffect(enemy.mesh.position, 0xfef08a, 0.7, 0.22);
     }
     enemy.hp -= finalAmount;
     enemy.flash = 0.1;
@@ -2688,6 +3030,19 @@ export class Game {
       enemy.dead = true;
       this.deadEnemies.push(enemy);
     }
+  }
+
+  getReactionVulnerabilityMultiplier(enemy) {
+    let levels = 0;
+    for (const tower of this.towers) {
+      const range = tower.stats.range * TILE_SIZE;
+      const dx = tower.mesh.position.x - enemy.mesh.position.x;
+      const dz = tower.mesh.position.z - enemy.mesh.position.z;
+      if (dx * dx + dz * dz > range * range) continue;
+      if (tower.type.id === 'magic') levels += tower.level;
+      else if (tower.type.id === 'cursed') levels += tower.type.reactionLevels || 6;
+    }
+    return 1 + Math.min(20, levels) * 0.05;
   }
 
   spreadElement(source, element) {
@@ -2717,6 +3072,47 @@ export class Game {
     this.castEffect(source.mesh.position, 0x4ade80, radiusCells * 1.2, 0.35);
   }
 
+  applyScorchTick(source, amount, packet, radiusCells) {
+    const radius = radiusCells * TILE_SIZE;
+    const radiusSq = radius * radius;
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      const dx = enemy.mesh.position.x - source.mesh.position.x;
+      const dz = enemy.mesh.position.z - source.mesh.position.z;
+      if (dx * dx + dz * dz > radiusSq) continue;
+      this.damageEnemy(enemy, amount, packet);
+    }
+    this.castEffect(source.mesh.position, 0xf97316, radiusCells * 1.2, 0.3);
+  }
+
+  updateSweepVortices(dt) {
+    if (this.sweepVortices.length === 0) return;
+    for (let i = this.sweepVortices.length - 1; i >= 0; i--) {
+      const vortex = this.sweepVortices[i];
+      vortex.timer -= dt;
+      while (vortex.timer <= 0 && vortex.ticksLeft > 0) {
+        vortex.timer += SWEEP_VORTEX_TICK_SECONDS;
+        vortex.ticksLeft--;
+        const radiusSq = vortex.radius * vortex.radius;
+        for (const enemy of this.enemies) {
+          if (enemy.dead) continue;
+          const dx = enemy.mesh.position.x - vortex.position.x;
+          const dz = enemy.mesh.position.z - vortex.position.z;
+          if (dx * dx + dz * dz > radiusSq) continue;
+          this.damageEnemy(enemy, vortex.damage, {
+            damageType: 'magic',
+            element: 'wind',
+            attach: 0,
+            source: 'sweep',
+            reaction: true
+          });
+        }
+        this.castEffect(vortex.position, 0x4ade80, vortex.radius * 0.6, 0.45);
+      }
+      if (vortex.ticksLeft <= 0) this.sweepVortices.splice(i, 1);
+    }
+  }
+
   applyShockTick(source, shock) {
     const radius = 2.5 * TILE_SIZE;
     const radiusSq = radius * radius;
@@ -2732,7 +3128,8 @@ export class Game {
       damageType: 'physical',
       element: 'lightning',
       attach: 0,
-      source: 'shock'
+      source: 'shock',
+      reaction: true
     });
     this.castEffect(source.mesh.position, 0xfacc15, 1.3 + count * 0.12, 0.32);
   }
@@ -2756,7 +3153,8 @@ export class Game {
               damageType: 'physical',
               element: 'fire',
               attach: 0,
-              source: 'overload'
+              source: 'overload',
+              reaction: true
             });
           }
           this.castEffect(enemy.mesh.position, 0xf97316, event.radius * 1.2, 0.5);
@@ -2767,30 +3165,43 @@ export class Game {
             damageType: 'physical',
             element: 'none',
             attach: 0,
-            source: 'superconduct'
+            source: 'superconduct',
+            reaction: true
           });
           this.castEffect(enemy.mesh.position, 0x93c5fd, 1.8, 0.42);
           continue;
         }
         if (event.type === 'annihilation') {
-          this.damageEnemy(enemy, enemy.maxHp * event.selfTrueRatio, {
-            damageType: 'magic',
-            element: 'none',
-            attach: 0,
-            source: 'annihilation',
-            trueDamage: true
-          });
           const radiusSq = (event.radius * TILE_SIZE) ** 2;
+          const targets = [];
           for (const target of this.enemies) {
             if (target.dead) continue;
             const dx = target.mesh.position.x - enemy.mesh.position.x;
             const dz = target.mesh.position.z - enemy.mesh.position.z;
-            if (dx * dx + dz * dz > radiusSq) continue;
+            if (dx * dx + dz * dz <= radiusSq) targets.push(target);
+          }
+          let highest = null;
+          for (const target of targets) {
+            if (!highest || target.maxHp > highest.maxHp) highest = target;
+          }
+          for (const target of targets) {
+            const ratio = target === highest ? event.highestTrueRatio : event.otherTrueRatio;
+            this.damageEnemy(target, target.maxHp * ratio, {
+              damageType: 'magic',
+              element: 'none',
+              attach: 0,
+              source: 'annihilation',
+              trueDamage: true
+            });
+          }
+          for (const target of targets) {
+            if (target.dead) continue;
             this.damageEnemy(target, event.damage, {
               damageType: 'magic',
               element: 'none',
               attach: 0,
-              source: 'annihilation'
+              source: 'annihilation',
+              reaction: true
             });
           }
           this.castEffect(enemy.mesh.position, 0xf5d0fe, event.radius * 1.2, 0.55);
@@ -2811,7 +3222,8 @@ export class Game {
               damageType: 'magic',
               element: 'lightning',
               attach: 0,
-              source: 'parallel'
+              source: 'parallel',
+              reaction: true
             });
           }
           this.castEffect(enemy.mesh.position, 0xfacc15, event.radius * 1.2, 0.45);
@@ -2831,13 +3243,43 @@ export class Game {
             if (event.debuffs.includes('stasis')) target.status.stasis = true;
             this.castEffect(target.mesh.position, 0xa855f7, 0.9, 0.3);
           }
+          this.sweepVortices.push({
+            position: enemy.mesh.position.clone(),
+            radius: event.radius * TILE_SIZE,
+            ticksLeft: SWEEP_VORTEX_TICKS,
+            timer: SWEEP_VORTEX_TICK_SECONDS,
+            damage: SWEEP_VORTEX_DAMAGE
+          });
+          this.castEffect(enemy.mesh.position, 0x4ade80, event.radius * 2, 0.45);
+          continue;
+        }
+        if (event.type === 'evaporate') {
+          this.damageEnemy(enemy, event.damage, {
+            damageType: 'physical',
+            element: 'none',
+            attach: 0,
+            source: 'evaporate',
+            reaction: true
+          });
+          this.castEffect(enemy.mesh.position, 0xbfdbfe, 1.4, 0.4);
+          continue;
+        }
+        if (event.type === 'melt') {
+          this.damageEnemy(enemy, event.damage, {
+            damageType: 'physical',
+            element: 'water',
+            attach: 0,
+            source: 'melt',
+            reaction: true
+          });
+          this.castEffect(enemy.mesh.position, 0x93c5fd, 1.3, 0.38);
           continue;
         }
 
         const color =
-          event.type === 'steam'
+          event.type === 'melt'
             ? 0xbfdbfe
-            : event.type === 'quench'
+            : event.type === 'evaporate'
               ? 0x94a3b8
               : event.type === 'condense'
                 ? 0x67e8f9
@@ -2901,7 +3343,9 @@ export class Game {
       damageType: stats.damageType || 'physical',
       element: stats.element || 'none',
       attach: stats.element && stats.element !== 'none' ? 1 : 0,
-      source: stats.id
+      source: stats.id,
+      critChance: stats.critChance || 0,
+      critDamage: stats.critDamage || 0
     };
 
     if (stats.splash) {
@@ -2927,7 +3371,7 @@ export class Game {
   }
 
   fireMagicTower(tower, target) {
-    const rangeSq = (tower.stats.range * TILE_SIZE) ** 2;
+    const rangeSq = (tower.type.recognizeRange * TILE_SIZE) ** 2;
     const elements = [];
     for (const other of this.towers) {
       if (other === tower || !other.type.element || other.type.element === 'none') continue;
@@ -2948,7 +3392,9 @@ export class Game {
         position: position.clone(),
         origin: origin.clone(),
         damage: tower.stats.damage,
-        radius: tower.stats.splash
+        radius: tower.stats.splash,
+        critChance: tower.stats.critChance || 0,
+        critDamage: tower.stats.critDamage || 0
       });
     }
   }
@@ -2969,12 +3415,53 @@ export class Game {
           damageType: 'magic',
           element: cast.element,
           attach: cast.element === 'none' ? 0 : 1,
-          source: 'magic'
+          source: cast.source || 'magic',
+          critChance: cast.critChance || 0,
+          critDamage: cast.critDamage || 0
         });
       }
       const color = cast.element === 'none' ? 0x818cf8 : ELEMENTS[cast.element].color;
       this.castEffect(cast.position, color, cast.radius * 1.8, 0.38);
-      this.spawnTracer(cast.origin, cast.position, color, 0.05);
+      if (cast.kind !== 'cursed') this.spawnTracer(cast.origin, cast.position, color, 0.05);
+    }
+  }
+
+  fireCursedTower(tower) {
+    const recognizeRangeSq = (tower.type.recognizeRange * TILE_SIZE) ** 2;
+    const elements = [];
+    let consumedHp = 0;
+    for (const other of this.towers) {
+      const dx = other.mesh.position.x - tower.mesh.position.x;
+      const dz = other.mesh.position.z - tower.mesh.position.z;
+      if (dx * dx + dz * dz > recognizeRangeSq) continue;
+      if (other.type.element && other.type.element !== 'none') elements.push(other.type.element);
+      const amount = Math.min(Math.max(0, other.hp - 1), other.hp * tower.type.hpConsumeRatio);
+      if (amount > 0) {
+        other.hp = Math.max(1, other.hp - amount);
+        consumedHp += amount;
+        this.castEffect(other.mesh.position, 0x7c3aed, 0.75, 0.25);
+      }
+    }
+    if (this.selectedTower && this.towers.includes(this.selectedTower)) {
+      this.updateTowerPanel();
+    }
+
+    const attributes = elements.length > 0 ? [...new Set(elements)] : ['none'];
+    const lastBonus = consumedHp * tower.type.damagePerHp;
+    const origin = tower.mesh.position.clone();
+    for (let i = 0; i < tower.type.pickCount; i++) {
+      this.magicCasts.push({
+        time: this.waveClock + i * tower.type.castInterval,
+        element: attributes[Math.floor(this.rng() * attributes.length)],
+        position: tower.mesh.position.clone(),
+        origin: origin.clone(),
+        damage: tower.stats.damage + (i === tower.type.pickCount - 1 ? lastBonus : 0),
+        radius: tower.stats.range,
+        critChance: tower.stats.critChance || 0,
+        critDamage: tower.stats.critDamage || 0,
+        source: 'cursed',
+        kind: 'cursed'
+      });
     }
   }
 
@@ -2995,6 +3482,18 @@ export class Game {
         continue;
       }
 
+      if (tower.type.coinTower) {
+        tower.cooldown -= dt;
+        tower.head.rotation.y += dt * 0.9;
+        if (this.waveIndex > 0 && tower.cooldown <= 0) {
+          tower.cooldown += tower.stats.incomeInterval;
+          this.gold += tower.stats.income;
+          this.castEffect(tower.mesh.position, 0xfacc15, 0.85, 0.3);
+          this.updateHud();
+        }
+        continue;
+      }
+
       tower.cooldown -= dt;
       const target = this.findTarget(tower);
       if (target) {
@@ -3005,6 +3504,7 @@ export class Game {
         tower.head.rotation.y = dampAngle(tower.head.rotation.y, angle, dt * 14);
         if (tower.cooldown <= 0) {
           if (tower.type.magicTower) this.fireMagicTower(tower, target);
+          else if (tower.type.curseTower) this.fireCursedTower(tower);
           else this.fire(tower, target);
           tower.cooldown = 1 / tower.stats.fireRate;
         }
@@ -3025,7 +3525,9 @@ export class Game {
       tickLightning(enemy, dt, (target, amount, packet) => this.damageEnemy(target, amount, packet));
       tickWind(enemy, dt, (target, amount, packet, radius) => this.applyWindTick(target, amount, packet, radius));
       tickShock(enemy, dt, (target, shock) => this.applyShockTick(target, shock));
-      tickScorch(enemy, dt, (target, amount, packet) => this.damageEnemy(target, amount, packet));
+      tickScorch(enemy, dt, (target, amount, packet, radius) =>
+        this.applyScorchTick(target, amount, packet, radius)
+      );
       if (enemy.dead) continue;
 
       const slow = getIceSlowFactor(enemy);
@@ -3034,14 +3536,15 @@ export class Game {
       enemy.routeDist += speed * dt;
       enemy.remaining = enemy.routeTotal - enemy.routeDist;
       if (enemy.routeDist >= enemy.routeTotal) {
-        this.leakEnemy(enemy);
+        if (enemy.noLeak) this.retireEnemy(enemy);
+        else this.leakEnemy(enemy);
         continue;
       }
 
       this.sampleRoute(enemy, this.tmpPos, this.tmpDir);
       const px = this.tmpPos.x - this.tmpDir.z * enemy.offset;
       const pz = this.tmpPos.z + this.tmpDir.x * enemy.offset;
-      enemy.mesh.position.set(px, 0.14, pz);
+      enemy.mesh.position.set(px, enemy.altitude, pz);
       const yaw = Math.atan2(this.tmpDir.x, this.tmpDir.z);
       enemy.mesh.rotation.y = dampAngle(enemy.mesh.rotation.y, yaw, dt * 9);
 
@@ -3074,13 +3577,40 @@ export class Game {
       const ratio = clamp(enemy.hp / enemy.maxHp, 0, 1);
       enemy.bar.visible = ratio < 1 || enemy.type.id === 'elite';
       if (enemy.bar.visible) {
-        enemy.bar.position.set(px, 0.14 + enemy.type.height + 0.55, pz);
+        enemy.bar.position.set(px, enemy.altitude + enemy.type.height + 0.55, pz);
         enemy.barFill.scale.x = Math.max(0.001, enemy.barWidth * ratio);
         enemy.barFill.position.x = -enemy.barWidth / 2 + (enemy.barWidth * ratio) / 2;
         enemy.barFill.material.color.setHex(ratio > 0.5 ? 0x4ade80 : ratio > 0.25 ? 0xfacc15 : 0xef4444);
       }
 
       enemy.towerAttackTimer -= dt;
+      if (enemy.type.bombard) {
+        if (enemy.towerAttackTimer <= 0) {
+          const tower = this.findTowerInRange(enemy, enemy.type.bombRange);
+          if (tower) {
+            const water = getWaterAttackModifiers(enemy);
+            this.enemyBombs.push({
+              time: this.waveClock + enemy.type.bombTravel,
+              source: enemy,
+              position: tower.mesh.position.clone(),
+              radius: enemy.type.bombRadius,
+              damage: enemy.type.bombDamage * water.damageMultiplier
+            });
+            this.spawnTracer(
+              enemy.mesh.position,
+              tower.mesh.position,
+              0xfbbf24,
+              0.08
+            );
+            enemy.towerAttackTimer =
+              enemy.type.bombInterval * water.intervalMultiplier / getStasisAttackFactor(enemy);
+          } else {
+            enemy.towerAttackTimer = 0.4;
+          }
+        }
+        continue;
+      }
+
       if (enemy.towerAttackTimer <= 0) {
         const tower = this.findTowerInContact(enemy);
         const drunkTarget = enemy.status.drunken ? this.findDrunkenTarget(enemy) : null;
@@ -3105,6 +3635,23 @@ export class Game {
     }
   }
 
+  updateEnemyBombs() {
+    if (this.enemyBombs.length === 0) return;
+    for (let i = this.enemyBombs.length - 1; i >= 0; i--) {
+      const bomb = this.enemyBombs[i];
+      if (bomb.time > this.waveClock) continue;
+      this.enemyBombs.splice(i, 1);
+      const radiusSq = (bomb.radius * TILE_SIZE) ** 2;
+      for (const tower of this.towers) {
+        const dx = tower.mesh.position.x - bomb.position.x;
+        const dz = tower.mesh.position.z - bomb.position.z;
+        if (dx * dx + dz * dz > radiusSq) continue;
+        this.damageTower(tower, bomb.damage, bomb.source);
+      }
+      this.castEffect(bomb.position, 0xfbbf24, bomb.radius * 1.8, 0.45);
+    }
+  }
+
   leakEnemy(enemy) {
     if (enemy.dead) return;
     enemy.dead = true;
@@ -3113,6 +3660,14 @@ export class Game {
     this.lives = Math.max(0, this.lives - enemy.type.leak);
     this.toast(`漏怪 -${enemy.type.leak} 生命`);
     if (this.lives <= 0) this.endGame(false);
+  }
+
+  retireEnemy(enemy) {
+    if (enemy.dead) return;
+    enemy.dead = true;
+    enemy.retired = true;
+    this.deadEnemies.push(enemy);
+    this.castEffect(enemy.mesh.position, 0x93c5fd, 0.8, 0.3);
   }
 
   processDeaths() {
@@ -3128,7 +3683,7 @@ export class Game {
         state.alive = Math.max(0, state.alive - 1);
         completedStates.add(state);
       }
-      if (!enemy.leaked) {
+      if (!enemy.leaked && !enemy.retired) {
         this.gold += enemy.reward;
         this.kills++;
         this.score += enemy.type.score || 0;
@@ -3201,6 +3756,7 @@ export class Game {
 
   update(dt) {
     if (this.phase === 'build' || this.phase === 'combat') {
+      this.repairCooldown = Math.max(0, this.repairCooldown - dt);
       if (Number.isFinite(this.prepRemaining)) {
         this.prepRemaining = Math.max(0, this.prepRemaining - dt / Math.max(1, this.speed));
         if (this.prepRemaining <= 0 && this.canStartNextWave()) {
@@ -3226,7 +3782,9 @@ export class Game {
     this.updateTowers(dt);
     this.updateMagicCasts();
     this.updateEnemies(dt);
+    this.updateEnemyBombs();
     this.processReactions();
+    this.updateSweepVortices(dt);
     this.processDeaths();
   }
 

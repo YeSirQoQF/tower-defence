@@ -26,6 +26,8 @@ export function createWave(seed, difficultyKey = 'normal', index = 1, giant = fa
   const pool = ['grunt'];
   if (w >= 2) pool.push('runner');
   if (w >= 3) pool.push('tank');
+  if (w >= 4) pool.push('bombardier');
+  if (w >= 6) pool.push('flyer');
 
   const tankBoost = Math.min(2.4, 1 + Math.max(0, w - WAVE_CONFIG.count) * 0.045);
   const desiredGroups = Math.min(7, 2 + Math.floor((w - 1) / 2));
