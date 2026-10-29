@@ -63,10 +63,10 @@ export function createWave(seed, difficultyKey = 'normal', index = 1, giant = fa
     delay += count * type.interval * 0.62 + 0.5 + rng() * 0.6;
   }
 
-  if (w % WAVE_CONFIG.eliteEvery === 0) {
+  if (w >= diff.eliteStartWave && (w - diff.eliteStartWave) % WAVE_CONFIG.eliteEvery === 0) {
     groups.push({
       type: 'elite',
-      count: 1 + Math.floor(w / (WAVE_CONFIG.eliteEvery * 2)),
+      count: 1 + Math.floor((w - diff.eliteStartWave) / (WAVE_CONFIG.eliteEvery * 2)),
       interval: 2.4,
       delay
     });

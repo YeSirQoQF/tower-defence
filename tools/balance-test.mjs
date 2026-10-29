@@ -8,10 +8,14 @@ import {
   decayStatus,
   getDarkReflectRatio,
   getLightDamageMultiplier,
+  applySweepResistanceDebuff,
+  applySpreadResistanceDebuff,
+  getSpreadResistanceDebuff,
+  getSweepResistanceDebuff,
   getStasisAttackFactor,
   getStasisMovementFactor,
   getAttachmentHalfLife,
-  getWaterAttackModifiers,
+  getLightResistanceDebuff,
   resolveReactions,
   tickScorch
 } from '../js/systems/status.js';
@@ -290,11 +294,18 @@ for (let i = 1; i < milestone.length; i++) {
   }
 }
 
-for (const w of [4, 8, 12]) {
-  const wave = generateWaves('ELITE-CHECK')[w - 1];
-  if (!wave.groups.some((group) => group.type === 'elite')) {
+for (const key of Object.keys(DIFFICULTIES)) {
+  const start = DIFFICULTIES[key].eliteStartWave;
+  const waves = generateWaves('ELITE-CHECK', key, start);
+  for (let w = 1; w < start; w++) {
+    if (waves[w - 1].groups.some((group) => group.type === 'elite')) {
+      failed = true;
+      console.error(`${key} wave ${w} has an early elite`);
+    }
+  }
+  if (!waves[start - 1].groups.some((group) => group.type === 'elite')) {
     failed = true;
-    console.error(`Wave ${w} is missing a elite`);
+    console.error(`${key} wave ${start} is missing an elite`);
   }
 }
 
@@ -362,8 +373,38 @@ checkReaction(
   'light-protect',
   lightProtected.status.attachments.fire === 2 && lightProtected.status.attachments.light < 1
 );
-const water = getWaterAttackModifiers({ status: { attachments: { water: 4 } } });
-checkReaction('water', water.intervalMultiplier === 1.48 && water.damageMultiplier === 0.8);
+const lightResistEnemy = makeReactionEnemy();
+addAttachment(lightResistEnemy, 'light', 1);
+addAttachment(lightResistEnemy, 'fire', 2);
+checkReaction(
+  'light-resist-debuff',
+  Math.abs(getLightResistanceDebuff(lightResistEnemy, 'fire') + 0.2) < 1e-9
+);
+const spreadEnemy = makeReactionEnemy();
+applySpreadResistanceDebuff(spreadEnemy, 'fire');
+checkReaction(
+  'spread-resist',
+  getSpreadResistanceDebuff(spreadEnemy, 'fire') === -0.3 &&
+    getSpreadResistanceDebuff(spreadEnemy, 'wind') === -0.2
+);
+applySpreadResistanceDebuff(spreadEnemy, 'ice');
+checkReaction(
+  'spread-refresh',
+  getSpreadResistanceDebuff(spreadEnemy, 'fire') === 0 &&
+    getSpreadResistanceDebuff(spreadEnemy, 'ice') === -0.3
+);
+const sweepEnemy = makeReactionEnemy();
+checkReaction(
+  'sweep-resist-once',
+  applySweepResistanceDebuff(sweepEnemy) &&
+    !applySweepResistanceDebuff(sweepEnemy) &&
+    getSweepResistanceDebuff(sweepEnemy) === -0.2
+);
+const negativeResistance = { resistances: { physical: 0, fire: 0.1, magic: 0 } };
+checkReaction(
+  'negative-resistance',
+  getResistanceMultiplier(negativeResistance, 'physical', 'fire', -0.6) > 1.4
+);
 const lightHalfLifeEnemy = makeReactionEnemy();
 const darkHalfLifeEnemy = makeReactionEnemy();
 const fireHalfLifeEnemy = makeReactionEnemy();
@@ -467,7 +508,11 @@ if (magicTotal > 3000) {
   failed = true;
   console.error(`  BUDGET FAIL magic ${magicTotal}`);
 }
-if (COIN_UPGRADE.maxLevel !== 20 || COIN_UPGRADE.costs[14] !== 100) {
+if (
+  COIN_UPGRADE.maxLevel !== 20 ||
+  COIN_UPGRADE.costs[0] !== 1 ||
+  COIN_UPGRADE.costs[COIN_UPGRADE.costs.length - 1] !== 20
+) {
   failed = true;
   console.error('  UPGRADE FAIL coin level/cost');
 }
@@ -480,7 +525,7 @@ if (PULSE_UPGRADE.rangePerLevel < 0.2 || CANNON_UPGRADE.rangePerLevel < 0.12) {
   console.error('  UPGRADE FAIL pulse/cannon range growth');
 }
 console.log(
-  `budgets · pulse ${pulseTotal} · supply ${supplyTotal} · magic ${magicTotal} · coin Lv.${COIN_UPGRADE.maxLevel} (15→16 ${COIN_UPGRADE.costs[14]})`
+  `budgets · pulse ${pulseTotal} · supply ${supplyTotal} · magic ${magicTotal} · coin Lv.${COIN_UPGRADE.maxLevel} (${COIN_UPGRADE.costs[0]}→${COIN_UPGRADE.costs[COIN_UPGRADE.costs.length - 1]})`
 );
 
 console.log(`\nResult: ${failed ? 'FAILED' : 'PASSED'}\n`);

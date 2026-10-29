@@ -39,14 +39,18 @@ import {
   createStatus,
   decayStatus,
   dominantElement,
+  applySpreadResistanceDebuff,
+  applySweepResistanceDebuff,
   getDarkReflectRatio,
   getIceSlowFactor,
   getLightDamageMultiplier,
+  getLightResistanceDebuff,
+  getSweepResistanceDebuff,
+  getSpreadResistanceDebuff,
   ICE_SLOW_PER_LAYER,
   getStasisAttackFactor,
   getStasisMovementFactor,
   getVisibleAttachments,
-  getWaterAttackModifiers,
   resolveReactions,
   SCORCH_TICK_SECONDS,
   SHOCK_DAMAGE_BASE,
@@ -2269,11 +2273,22 @@ export class Game {
 
   damageTower(tower, amount, source = null) {
     if (!tower || tower.hp <= 0) return;
+    if (source?.status?.attachments?.water > 0) {
+      this.healTower(tower, amount);
+      return;
+    }
     tower.hp = Math.max(0, tower.hp - amount);
     this.castEffect(tower.mesh.position, 0xef4444, 0.9, 0.3);
     this.applyDarkReflect(source, amount);
     if (this.selectedTower === tower) this.updateTowerPanel();
     if (tower.hp <= 0) this.destroyTower(tower);
+  }
+
+  healTower(tower, amount) {
+    if (!tower || tower.hp <= 0) return;
+    tower.hp = Math.min(tower.maxHp, tower.hp + amount);
+    this.castEffect(tower.mesh.position, 0x34d399, 0.9, 0.3);
+    if (this.selectedTower === tower) this.updateTowerPanel();
   }
 
   applyDarkReflect(source, damageDealt) {
@@ -2581,13 +2596,11 @@ export class Game {
   }
 
   getEnemyAttackDamage(enemy) {
-    const water = getWaterAttackModifiers(enemy);
-    return (enemy.type.towerDamage || 0) * water.damageMultiplier;
+    return enemy.type.towerDamage || 0;
   }
 
   getEnemyAttackDelay(enemy) {
-    const water = getWaterAttackModifiers(enemy);
-    return 1.2 * water.intervalMultiplier / getStasisAttackFactor(enemy);
+    return 1.2 / getStasisAttackFactor(enemy);
   }
 
   findDrunkenTarget(enemy) {
@@ -2986,7 +2999,12 @@ export class Game {
       towerAttackTimer: 0.8 + this.rng() * 0.8,
       reward: Math.round(type.reward * wave.rewardMul),
       status: createStatus(),
-      resistances: createResistances(type, wave.index || effectiveWaveIndex + 1),
+      resistances: createResistances(
+        type,
+        wave.index || effectiveWaveIndex + 1,
+        this.difficulty,
+        this.rng
+      ),
       altitude: type.altitude || 0.14,
       noLeak: !!type.noLeak,
       flash: 0,
@@ -3043,7 +3061,13 @@ export class Game {
         finalAmount *= 1 + (packet.critDamage || 0);
         crit = true;
       }
-      finalAmount *= getResistanceMultiplier(enemy, damageType, packet.element);
+      const attributeDebuff =
+        packet.element && packet.element !== 'none'
+          ? getLightResistanceDebuff(enemy, packet.element) +
+            getSpreadResistanceDebuff(enemy, packet.element) +
+            getSweepResistanceDebuff(enemy)
+          : 0;
+      finalAmount *= getResistanceMultiplier(enemy, damageType, packet.element, attributeDebuff);
       finalAmount *= getLightDamageMultiplier(enemy);
       if (packet.reaction) finalAmount *= this.getReactionVulnerabilityMultiplier(enemy);
       if (crit) this.castEffect(enemy.mesh.position, 0xfef08a, 0.7, 0.22);
@@ -3081,6 +3105,7 @@ export class Game {
       const dz = enemy.mesh.position.z - source.mesh.position.z;
       if (dx * dx + dz * dz > radiusSq) continue;
       addAttachment(enemy, element, 1);
+      applySpreadResistanceDebuff(enemy, element);
       this.reactionQueue.add(enemy);
     }
     const color = ELEMENTS[element] ? ELEMENTS[element].color : 0x94a3b8;
@@ -3259,11 +3284,13 @@ export class Game {
         }
         if (event.type === 'sweep') {
           const radiusSq = (event.radius * TILE_SIZE) ** 2;
+          applySweepResistanceDebuff(enemy);
           for (const target of this.enemies) {
             if (target.dead || target === enemy) continue;
             const dx = target.mesh.position.x - enemy.mesh.position.x;
             const dz = target.mesh.position.z - enemy.mesh.position.z;
             if (dx * dx + dz * dz > radiusSq) continue;
+            applySweepResistanceDebuff(target);
             if (event.debuffs.includes('scorch') && !target.status.scorch) {
               target.status.scorch = { tickTimer: SCORCH_TICK_SECONDS };
             }
@@ -3616,13 +3643,12 @@ export class Game {
         if (enemy.towerAttackTimer <= 0) {
           const tower = this.findTowerInRange(enemy, enemy.type.bombRange);
           if (tower) {
-            const water = getWaterAttackModifiers(enemy);
             this.enemyBombs.push({
               time: this.waveClock + enemy.type.bombTravel,
               source: enemy,
               position: tower.mesh.position.clone(),
               radius: enemy.type.bombRadius,
-              damage: enemy.type.bombDamage * water.damageMultiplier
+              damage: enemy.type.bombDamage
             });
             this.spawnTracer(
               enemy.mesh.position,
@@ -3631,7 +3657,7 @@ export class Game {
               0.08
             );
             enemy.towerAttackTimer =
-              enemy.type.bombInterval * water.intervalMultiplier / getStasisAttackFactor(enemy);
+              enemy.type.bombInterval / getStasisAttackFactor(enemy);
           } else {
             enemy.towerAttackTimer = 0.4;
           }

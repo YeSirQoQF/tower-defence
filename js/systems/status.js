@@ -16,9 +16,12 @@ export const SHOCK_DAMAGE_BASE = 1.8;
 export const OVERLOAD_DAMAGE_PER_LAYER = 6;
 export const SUPERCONDUCT_BASE_DAMAGE = 10;
 export const SUPERCONDUCT_DOT_MULTIPLIER = 1.5;
-export const WATER_ATTACK_SLOW_PER_LAYER = 0.12;
-export const WATER_DAMAGE_REDUCTION_PER_LAYER = 0.05;
 export const LIGHT_DAMAGE_AMP_PER_LAYER = 0.15;
+export const LIGHT_RESIST_REDUCTION_PER_LAYER = 0.1;
+export const SPREAD_RESIST_REDUCTION = 0.3;
+export const SPREAD_WIND_RESIST_REDUCTION = 0.2;
+export const SPREAD_RESIST_DURATION = 6;
+export const SWEEP_RESIST_REDUCTION = 0.2;
 export const DARK_REFLECT_PER_LAYER = 0.2;
 export const SCORCH_TICK_SECONDS = 0.7;
 export const SCORCH_DAMAGE_PER_TICK = 7.2;
@@ -69,6 +72,8 @@ export function createStatus() {
     scorch: null,
     drunken: false,
     stasis: false,
+    spreadResistance: null,
+    sweepResistanceApplied: false,
     reactionCooldown: 0,
     buffs: {}
   };
@@ -134,6 +139,10 @@ export function decayStatus(enemy, dt) {
     enemy.status.attachments[element] = rounded;
     if (enemy.status.residuals) enemy.status.residuals[element] = raw - rounded;
   }
+  if (enemy.status.spreadResistance) {
+    enemy.status.spreadResistance.remaining -= dt;
+    if (enemy.status.spreadResistance.remaining <= 0) enemy.status.spreadResistance = null;
+  }
   if (enemy.status.reactionCooldown > 0) {
     enemy.status.reactionCooldown = Math.max(0, enemy.status.reactionCooldown - dt);
   }
@@ -149,17 +158,42 @@ export function getIceSlowFactor(enemy) {
   return Math.max(0.1, 1 - ICE_SLOW_PER_LAYER * layers);
 }
 
-export function getWaterAttackModifiers(enemy) {
-  const layers = enemy.status ? enemy.status.attachments.water : 0;
-  return {
-    intervalMultiplier: 1 + WATER_ATTACK_SLOW_PER_LAYER * layers,
-    damageMultiplier: Math.max(0.2, 1 - WATER_DAMAGE_REDUCTION_PER_LAYER * layers)
-  };
-}
-
 export function getLightDamageMultiplier(enemy) {
   const layers = enemy.status ? enemy.status.attachments.light : 0;
   return 1 + LIGHT_DAMAGE_AMP_PER_LAYER * layers;
+}
+
+export function getLightResistanceDebuff(enemy, element) {
+  if (!enemy.status || !element || element === 'none') return 0;
+  if (!enemy.status.attachments.light || enemy.status.attachments.light <= 0) return 0;
+  return -(enemy.status.attachments[element] || 0) * LIGHT_RESIST_REDUCTION_PER_LAYER;
+}
+
+export function applySpreadResistanceDebuff(enemy, element) {
+  if (!enemy.status || !element || element === 'none') return;
+  enemy.status.spreadResistance = {
+    element,
+    remaining: SPREAD_RESIST_DURATION
+  };
+}
+
+export function getSpreadResistanceDebuff(enemy, element) {
+  if (!enemy.status || !enemy.status.spreadResistance || !element || element === 'none') return 0;
+  const debuff = enemy.status.spreadResistance;
+  let value = 0;
+  if (element === debuff.element) value -= SPREAD_RESIST_REDUCTION;
+  if (element === 'wind') value -= SPREAD_WIND_RESIST_REDUCTION;
+  return value;
+}
+
+export function applySweepResistanceDebuff(enemy) {
+  if (!enemy.status || enemy.status.sweepResistanceApplied) return false;
+  enemy.status.sweepResistanceApplied = true;
+  return true;
+}
+
+export function getSweepResistanceDebuff(enemy) {
+  return enemy.status && enemy.status.sweepResistanceApplied ? -SWEEP_RESIST_REDUCTION : 0;
 }
 
 export function getDarkReflectRatio(enemy) {

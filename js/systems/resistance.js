@@ -1,3 +1,5 @@
+import { DIFFICULTIES } from '../config.js';
+
 export const RESISTANCE_KEYS = Object.freeze([
   'fire',
   'ice',
@@ -17,8 +19,15 @@ export const TANK_MIN_RESISTANCE = 0.05;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-export function createResistances(type, waveNumber = 1, growthPerWave = RESISTANCE_GROWTH_PER_WAVE) {
+export function createResistances(
+  type,
+  waveNumber = 1,
+  difficultyKey = 'normal',
+  rng = Math.random,
+  growthPerWave = RESISTANCE_GROWTH_PER_WAVE
+) {
   const base = type.resistances || {};
+  const diff = DIFFICULTIES[difficultyKey] || DIFFICULTIES.normal;
   const cap = type.resistanceCap ?? (type.elite ? RESISTANCE_HARD_CAP : NORMAL_RESISTANCE_CAP);
   const growth = Math.max(0, waveNumber - 1) * growthPerWave;
   const resistances = {};
@@ -26,8 +35,16 @@ export function createResistances(type, waveNumber = 1, growthPerWave = RESISTAN
     const minimum = type.id === 'tank' ? TANK_MIN_RESISTANCE : type.minResistances?.[key] || 0;
     resistances[key] = clamp((base[key] || 0) + growth, minimum, cap);
   }
+
+  const mean = Math.max(0, diff.attrResistStart + (waveNumber - 1) * diff.attrResistGrowth);
+  const variance = diff.attrResistVariance;
+  const normal = () => {
+    const u = Math.max(1e-9, Math.min(1 - 1e-9, rng()));
+    const v = Math.max(0, Math.min(1, rng()));
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(Math.PI * 2 * v);
+  };
   for (const key of RESISTANCE_KEYS) {
-    resistances[key] = clamp((base[key] || 0) + growth, 0, cap);
+    resistances[key] = clamp(mean + normal() * variance, 0, cap);
   }
 
   const pairSum = resistances.physical + resistances.magic;
@@ -52,10 +69,12 @@ export function createResistances(type, waveNumber = 1, growthPerWave = RESISTAN
   };
 }
 
-export function getResistanceMultiplier(enemy, damageType, element) {
+export function getResistanceMultiplier(enemy, damageType, element, attributeDebuff = 0) {
   if (!enemy.resistances) return 1;
   const damageResistance = enemy.resistances[damageType] || 0;
   const attributeResistance =
-    element && element !== 'none' ? enemy.resistances[element] || 0 : 0;
+    element && element !== 'none'
+      ? (enemy.resistances[element] || 0) + attributeDebuff
+      : 0;
   return Math.max(0, (1 - damageResistance) * (1 - attributeResistance));
 }

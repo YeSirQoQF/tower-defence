@@ -1,8 +1,8 @@
 export const PULSE_UPGRADE = Object.freeze({
   costs: [
-    20, 24, 28, 34, 40, 48, 57, 68, 80, 96,
-    114, 136, 161, 192, 228, 272, 323, 385, 458, 545,
-    649, 772, 918, 1093, 1301, 1548, 1842, 2192, 2608, 3104, 3694
+    12, 14, 17, 20, 23, 27, 32, 38, 45, 53,
+    63, 74, 87, 103, 122, 144, 170, 200, 236, 279,
+    329, 388, 458, 540, 637, 752, 887, 1047, 1236, 1458, 1720
   ],
   maxLevel: 32,
   damagePerLevel: 1.04,
@@ -20,8 +20,8 @@ export const PULSE_UPGRADE = Object.freeze({
 
 export const SUPPLY_UPGRADE = Object.freeze({
   costs: [
-    60, 69, 79, 91, 105, 121, 139, 160, 184, 211, 243, 279,
-    321, 369, 425, 488, 561, 646, 743, 854, 982, 1129, 1299, 1493
+    25, 29, 34, 39, 45, 53, 61, 71, 82, 95, 110, 128,
+    148, 172, 200, 232, 269, 312, 362, 419, 487, 564, 655, 759
   ],
   maxLevel: 25,
   auraRangePerStack: 0.25,
@@ -64,7 +64,7 @@ export const SUPPLY_UPGRADE = Object.freeze({
 });
 
 export const CANNON_UPGRADE = Object.freeze({
-  costs: [50, 75, 105, 140, 180, 225, 275, 330],
+  costs: [30, 38, 49, 63, 81, 103, 132, 169],
   maxLevel: 9,
   damagePerLevel: 1.08,
   rangePerLevel: 0.12,
@@ -72,14 +72,14 @@ export const CANNON_UPGRADE = Object.freeze({
 });
 
 export const MAGIC_UPGRADE = Object.freeze({
-  costs: [90, 120, 155, 195, 240, 290, 345, 405, 470],
+  costs: [50, 63, 78, 98, 122, 153, 191, 238, 298],
   maxLevel: 10,
   reactionAmpPerLevel: 0.05,
   maxReactionLevels: 20
 });
 
 export const COIN_UPGRADE = Object.freeze({
-  costs: [20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 100, 110, 120, 130, 140],
+  costs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20],
   maxLevel: 20,
   intervalFactor: 0.95
 });
