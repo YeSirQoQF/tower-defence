@@ -761,6 +761,9 @@ export class Game {
     canvas.addEventListener('pointerdown', (event) => this.onPointerDown(event));
     canvas.addEventListener('wheel', (event) => this.onWheel(event), { passive: false });
     canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+    canvas.addEventListener('auxclick', (event) => {
+      if (event.button === 1) event.preventDefault();
+    });
     window.addEventListener('keydown', (event) => this.onKeyDown(event));
     window.addEventListener('keyup', (event) => this.keys.delete(event.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear());
@@ -2003,7 +2006,7 @@ export class Game {
   }
 
   onPointerDown(event) {
-    if (event.button === 1) {
+    if (event.button === 0) {
       event.preventDefault();
       this.orbit.panning = true;
       this.orbit.lastX = event.clientX;
@@ -2030,21 +2033,21 @@ export class Game {
 
     const basePos = this.cellToWorld(this.map.goal.x, this.map.goal.y);
     if (
-      event.button === 0 &&
+      event.button === 2 &&
       Math.hypot(this.tmpPoint.x - basePos.x, this.tmpPoint.z - basePos.z) <= TILE_SIZE * 1.7
     ) {
       this.tryRepairBase();
       return;
     }
 
-    if (event.button === 2) {
+    if (event.button === 1) {
       event.preventDefault();
       const tower = this.towerAt(cell.x, cell.y);
       if (tower) this.sellTower(tower);
       return;
     }
 
-    if (event.button !== 0) return;
+    if (event.button !== 2) return;
     const tower = this.towerAt(cell.x, cell.y);
     if (tower) {
       this.selectedTower = tower;
@@ -2143,6 +2146,7 @@ export class Game {
       head: model.userData.head,
       investment: type.cost
     };
+    if (type.coinTower) tower.cooldown = tower.stats.incomeInterval;
     this.createTowerHpBar(tower);
     this.towers.push(tower);
     this.towerGrid.set(`${x},${y}`, tower);
@@ -3538,10 +3542,16 @@ export class Game {
       }
 
       if (tower.type.coinTower) {
-        tower.cooldown -= dt;
         tower.head.rotation.y += dt * 0.9;
-        if (this.waveIndex > 0 && tower.cooldown <= 0) {
-          tower.cooldown += tower.stats.incomeInterval;
+        if (this.waveIndex === 0) {
+          tower.cooldown = tower.stats.incomeInterval;
+          continue;
+        }
+        tower.cooldown -= dt;
+        if (tower.cooldown <= 0) {
+          const overdue = Math.min(0, tower.cooldown);
+          tower.cooldown = tower.stats.incomeInterval + overdue;
+          if (tower.cooldown <= 0) tower.cooldown = tower.stats.incomeInterval;
           this.gold += tower.stats.income;
           this.castEffect(tower.mesh.position, 0xfacc15, 0.85, 0.3);
           this.updateHud();
