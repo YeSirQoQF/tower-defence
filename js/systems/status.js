@@ -1,8 +1,8 @@
 import { ELEMENTS } from '../config.js';
 
 export const MAX_ATTACHMENT = 4;
-export const HALF_LIFE_SECONDS = 1;
-export const LIGHT_DARK_HALF_LIFE_SECONDS = 2.5;
+export const ATTACHMENT_DECAY_SECONDS = 1.5;
+export const LIGHT_DARK_DECAY_SECONDS = 2.5;
 export const ICE_SLOW_PER_LAYER = 0.275;
 export const BURN_TICK_SECONDS = 0.7;
 export const BURN_DAMAGE_PER_LAYER = 1.6;
@@ -22,17 +22,18 @@ export const SPREAD_RESIST_REDUCTION = 0.3;
 export const SPREAD_WIND_RESIST_REDUCTION = 0.2;
 export const SPREAD_RESIST_DURATION = 6;
 export const SWEEP_RESIST_REDUCTION = 0.2;
-export const DARK_REFLECT_PER_LAYER = 0.2;
+export const DARK_REFLECT_PER_LAYER = 0.3;
 export const SCORCH_TICK_SECONDS = 0.7;
 export const SCORCH_DAMAGE_PER_TICK = 7.2;
+export const SCORCH_MAX_HP_LOSS_RATIO = 0.02;
 export const SCORCH_RADIUS_CELLS = 1.5;
 export const STASIS_MOVE_FACTOR = 0.2;
 export const STASIS_ATTACK_FACTOR = 0.2;
 export const ANNIHILATION_BASE_DAMAGE = 40;
 export const ANNIHILATION_DAMAGE_PER_LAYER = 12;
 export const ANNIHILATION_RADIUS_CELLS = 3.6;
-export const ANNIHILATION_HIGHEST_TRUE_RATIO = 0.2;
-export const ANNIHILATION_OTHER_TRUE_RATIO = 0.05;
+export const ANNIHILATION_TRUE_RATIO = 0.05;
+export const ANNIHILATION_EXTRA_MAGIC_RATIO = 0.15;
 export const PARALLEL_RADIUS_CELLS = 2.8;
 export const PARALLEL_DAMAGE_PER_TARGET = 8;
 export const DARK_SPREAD_RADIUS_CELLS = 3;
@@ -116,15 +117,17 @@ export function addAttachment(enemy, element, amount = 1) {
   return rounded - current;
 }
 
-export function getAttachmentHalfLife(element) {
-  return element === 'light' || element === 'dark' ? LIGHT_DARK_HALF_LIFE_SECONDS : HALF_LIFE_SECONDS;
+export function getAttachmentDecayRate(element) {
+  return 1 / (element === 'light' || element === 'dark' ? LIGHT_DARK_DECAY_SECONDS : ATTACHMENT_DECAY_SECONDS);
 }
 
 export function decayStatus(enemy, dt) {
   if (!enemy.status) return;
   const lightLayers = enemy.status.attachments.light || 0;
+  const darkLayers = enemy.status.attachments.dark || 0;
   for (const element of Object.keys(enemy.status.attachments)) {
     if (lightLayers > 0 && element !== 'light') continue;
+    if (darkLayers > 0 && element !== 'dark') continue;
     const stored = enemy.status.attachments[element] || 0;
     const residual = enemy.status.residuals ? enemy.status.residuals[element] || 0 : 0;
     let raw = stored + residual;
@@ -133,7 +136,7 @@ export function decayStatus(enemy, dt) {
       if (enemy.status.residuals) enemy.status.residuals[element] = 0;
       continue;
     }
-    raw *= Math.pow(0.5, dt / getAttachmentHalfLife(element));
+    raw = Math.max(0, raw - getAttachmentDecayRate(element) * dt);
     if (raw < 0.05) raw = 0;
     const rounded = Math.min(MAX_ATTACHMENT, Math.round(raw * 10) / 10);
     enemy.status.attachments[element] = rounded;
@@ -156,6 +159,10 @@ export function getIceSlowFactor(enemy) {
   const layers = enemy.status ? enemy.status.attachments.ice : 0;
   if (layers <= 0) return 1;
   return Math.max(0.1, 1 - ICE_SLOW_PER_LAYER * layers);
+}
+
+export function getIceActionFactor(enemy) {
+  return 1 + (1 - getIceSlowFactor(enemy)) * 0.5;
 }
 
 export function getLightDamageMultiplier(enemy) {
@@ -206,6 +213,10 @@ export function getStasisMovementFactor(enemy) {
 }
 
 export function getStasisAttackFactor(enemy) {
+  return enemy.status && enemy.status.stasis ? STASIS_ATTACK_FACTOR : 1;
+}
+
+export function getStasisSkillFactor(enemy) {
   return enemy.status && enemy.status.stasis ? STASIS_ATTACK_FACTOR : 1;
 }
 
@@ -285,7 +296,7 @@ export function tickShock(enemy, dt, shockCallback) {
   }
 }
 
-export function tickScorch(enemy, dt, damageCallback) {
+export function tickScorch(enemy, dt, damageCallback, hpLossCallback) {
   if (!enemy.status || !enemy.status.scorch) return;
   const scorch = enemy.status.scorch;
   scorch.tickTimer -= dt;
@@ -299,6 +310,9 @@ export function tickScorch(enemy, dt, damageCallback) {
       source: 'scorch',
       reaction: true
     }, SCORCH_RADIUS_CELLS);
+    if (!enemy.dead && hpLossCallback) {
+      hpLossCallback(enemy, Math.max(1, enemy.maxHp * SCORCH_MAX_HP_LOSS_RATIO));
+    }
   }
 }
 
@@ -344,8 +358,8 @@ export function resolveReactions(enemy, spreadCallback) {
           ANNIHILATION_BASE_DAMAGE + ANNIHILATION_DAMAGE_PER_LAYER * (light + dark)
         ),
         radius: ANNIHILATION_RADIUS_CELLS,
-        highestTrueRatio: ANNIHILATION_HIGHEST_TRUE_RATIO,
-        otherTrueRatio: ANNIHILATION_OTHER_TRUE_RATIO
+        trueRatio: ANNIHILATION_TRUE_RATIO,
+        extraMagicRatio: ANNIHILATION_EXTRA_MAGIC_RATIO
       });
       continue;
     }

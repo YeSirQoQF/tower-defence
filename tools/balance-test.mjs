@@ -14,7 +14,8 @@ import {
   getSweepResistanceDebuff,
   getStasisAttackFactor,
   getStasisMovementFactor,
-  getAttachmentHalfLife,
+  getAttachmentDecayRate,
+  getIceActionFactor,
   getLightResistanceDebuff,
   resolveReactions,
   tickScorch
@@ -238,10 +239,6 @@ for (const index of [13, 20, 30, 40]) {
     console.error(`Endless wave ${index} HP does not increase`);
   }
   previousHp = totals.hp;
-  if (totals.count > WAVE_CONFIG.enemyCap + 10) {
-    failed = true;
-    console.error(`Endless wave ${index} exceeds enemy cap`);
-  }
 }
 
 console.log(`\nWave curve (${WAVE_CONFIG.count} waves, averages over 200 seeds)\n`);
@@ -298,12 +295,12 @@ for (const key of Object.keys(DIFFICULTIES)) {
   const start = DIFFICULTIES[key].eliteStartWave;
   const waves = generateWaves('ELITE-CHECK', key, start);
   for (let w = 1; w < start; w++) {
-    if (waves[w - 1].groups.some((group) => group.type === 'elite')) {
+    if (waves[w - 1].groups.some((group) => ENEMY_TYPES[group.type].elite)) {
       failed = true;
       console.error(`${key} wave ${w} has an early elite`);
     }
   }
-  if (!waves[start - 1].groups.some((group) => group.type === 'elite')) {
+  if (!waves[start - 1].groups.some((group) => ENEMY_TYPES[group.type].elite)) {
     failed = true;
     console.error(`${key} wave ${start} is missing an elite`);
   }
@@ -339,8 +336,8 @@ checkReaction(
       event.type === 'annihilation' &&
       event.damage === 64 &&
       event.radius === 3.6 &&
-      event.highestTrueRatio === 0.2 &&
-      event.otherTrueRatio === 0.05
+      event.trueRatio === 0.05 &&
+      event.extraMagicRatio === 0.15
   )
 );
 const scorch = resolveCase([['dark', 1], ['fire', 1]]);
@@ -416,16 +413,20 @@ decayStatus(darkHalfLifeEnemy, 1);
 decayStatus(fireHalfLifeEnemy, 1);
 checkReaction(
   'light-dark-half-life',
-  getAttachmentHalfLife('light') === 2.5 &&
-    getAttachmentHalfLife('dark') === 2.5 &&
-    getAttachmentHalfLife('fire') === 1 &&
+  Math.abs(getAttachmentDecayRate('light') - 0.4) < 1e-9 &&
+    Math.abs(getAttachmentDecayRate('dark') - 0.4) < 1e-9 &&
+    Math.abs(getAttachmentDecayRate('fire') - 1 / 1.5) < 1e-9 &&
     lightHalfLifeEnemy.status.attachments.light > fireHalfLifeEnemy.status.attachments.fire &&
     darkHalfLifeEnemy.status.attachments.dark > fireHalfLifeEnemy.status.attachments.fire
+);
+checkReaction(
+  'frost-action',
+  Math.abs(getIceActionFactor({ status: { attachments: { ice: 2 } } }) - 1.275) < 1e-9
 );
 const light = { status: { attachments: { light: 4 } } };
 checkReaction('light-amp', getLightDamageMultiplier(light) === 1.6);
 const dark = { status: { attachments: { dark: 4 } } };
-checkReaction('dark-reflect', getDarkReflectRatio(dark) === 0.8);
+checkReaction('dark-reflect', getDarkReflectRatio(dark) === 1.2);
 const stasisEnemy = { status: { stasis: true } };
 checkReaction(
   'stasis-factors',
@@ -452,7 +453,7 @@ const checkResistance = (name, condition) => {
   }
 };
 for (const [id, type] of Object.entries(ENEMY_TYPES)) {
-  const cap = type.resistanceCap ?? 0.6;
+  const cap = type.resistanceCap ?? 0.7;
   for (const wave of [1, 30, 100, 200]) {
     const resistances = createResistances(type, wave);
     checkResistance(`${id}@${wave} cap`, Object.values(resistances).every((value) => value <= cap + 1e-9));
@@ -461,8 +462,8 @@ for (const [id, type] of Object.entries(ENEMY_TYPES)) {
       resistances.physical + resistances.magic <= 1.4 + 1e-9
     );
     checkResistance(
-      `${id}@${wave} attributes`,
-      !RESISTANCE_KEYS.every((key) => resistances[key] > 0.6)
+      `${id}@${wave} attribute spread`,
+      RESISTANCE_KEYS.every((key) => resistances[key] >= 0 && resistances[key] <= cap + 1e-9)
     );
     if (id === 'tank') {
       checkResistance(

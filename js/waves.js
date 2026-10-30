@@ -1,6 +1,18 @@
 import { DIFFICULTIES, ENEMY_TYPES, WAVE_CONFIG } from './config.js';
 import { makeRng, weightedPick } from './rng.js';
 
+function pickEliteType(wave, rng) {
+  const choices = [{ id: 'elite', weight: 1 }];
+  if (wave >= 12) choices.push({ id: 'eliteFlyer', weight: 0.45 });
+  if (wave >= 25) choices.push({ id: 'eliteShaman', weight: 0.35 });
+  if (wave >= 30) choices.push({ id: 'eliteTank', weight: 0.35 });
+  return weightedPick(
+    rng,
+    choices.map((choice) => choice.id),
+    choices.map((choice) => choice.weight)
+  );
+}
+
 export function createWave(seed, difficultyKey = 'normal', index = 1, giant = false) {
   const diff = DIFFICULTIES[difficultyKey] || DIFFICULTIES.normal;
   const rng = makeRng(`wave|${seed}|${diff.key}|${index}`);
@@ -12,26 +24,36 @@ export function createWave(seed, difficultyKey = 'normal', index = 1, giant = fa
     Math.pow(WAVE_CONFIG.budgetGrowth, growthWave - 1) *
     Math.pow(WAVE_CONFIG.endlessGrowth, Math.max(0, w - WAVE_CONFIG.count)) *
     diff.budgetMul;
+  let spawnBudget =
+    WAVE_CONFIG.baseBudget *
+    Math.pow(WAVE_CONFIG.budgetGrowth, growthWave - 1) *
+    (1 + WAVE_CONFIG.lateCountGrowth * Math.max(0, w - WAVE_CONFIG.count)) *
+    diff.budgetMul;
 
   let hpMul =
     (1 + WAVE_CONFIG.hpGrowth * (w - 1)) *
     diff.enemyHpMul *
     Math.pow(WAVE_CONFIG.endlessHpGrowth, Math.max(0, w - WAVE_CONFIG.count));
+  if (spawnBudget > 0 && budget > spawnBudget) {
+    hpMul *= Math.pow(budget / spawnBudget, WAVE_CONFIG.budgetToHpExponent);
+  }
   const speedMul = Math.min(WAVE_CONFIG.maxSpeedMul, 1 + WAVE_CONFIG.speedGrowth * (w - 1));
   const rewardMul = 1 + WAVE_CONFIG.rewardGrowth * (w - 1);
 
   budget = Math.round(budget);
+  spawnBudget = Math.round(spawnBudget);
 
   const groups = [];
   const pool = ['grunt'];
   if (w >= 2) pool.push('runner');
   if (w >= 3) pool.push('tank');
   if (w >= 4) pool.push('bombardier');
+  if (w >= 4) pool.push('shaman');
   if (w >= 6) pool.push('flyer');
 
   const tankBoost = Math.min(2.4, 1 + Math.max(0, w - WAVE_CONFIG.count) * 0.045);
   const desiredGroups = Math.min(7, 2 + Math.floor((w - 1) / 2));
-  let remaining = budget;
+  let remaining = spawnBudget;
   let delay = 0;
 
   for (let g = 0; g < desiredGroups && remaining >= 0.6; g++) {
@@ -63,12 +85,69 @@ export function createWave(seed, difficultyKey = 'normal', index = 1, giant = fa
     delay += count * type.interval * 0.62 + 0.5 + rng() * 0.6;
   }
 
-  if (w >= diff.eliteStartWave && (w - diff.eliteStartWave) % WAVE_CONFIG.eliteEvery === 0) {
+  const targetCount = 10 + Math.floor(Math.max(0, w - 1) * 2.5);
+  const currentCount = groups.reduce((sum, group) => sum + group.count, 0);
+  if (currentCount < targetCount) {
     groups.push({
-      type: 'elite',
-      count: 1 + Math.floor((w - diff.eliteStartWave) / (WAVE_CONFIG.eliteEvery * 2)),
-      interval: 2.4,
+      type: 'grunt',
+      count: targetCount - currentCount,
+      interval: 0.8,
       delay
+    });
+  }
+
+  const eliteGroups = new Map();
+  const addEliteGroup = (type, count) => {
+    if (count <= 0) return;
+    eliteGroups.set(type, (eliteGroups.get(type) || 0) + count);
+  };
+
+  if (w >= diff.eliteStartWave) {
+    const eliteShare = Math.min(
+      1,
+      WAVE_CONFIG.elitePromotionBase +
+        Math.max(0, w - diff.eliteStartWave) * WAVE_CONFIG.elitePromotionGrowth
+    );
+    for (const group of groups) {
+      if (group.patrol) continue;
+      const promote = Math.floor(group.count * eliteShare);
+      if (promote <= 0) continue;
+      group.count -= promote;
+      addEliteGroup(pickEliteType(w, rng), promote);
+    }
+    for (let i = groups.length - 1; i >= 0; i--) {
+      if (groups[i].count <= 0) groups.splice(i, 1);
+    }
+  }
+
+  if (w >= diff.eliteStartWave && (w - diff.eliteStartWave) % WAVE_CONFIG.eliteEvery === 0) {
+    addEliteGroup(
+      pickEliteType(w, rng),
+      1 + Math.floor((w - diff.eliteStartWave) / (WAVE_CONFIG.eliteEvery * 2))
+    );
+  }
+
+  for (const [type, count] of eliteGroups) {
+    const config = ENEMY_TYPES[type];
+    groups.push({
+      type,
+      count,
+      interval: config.interval,
+      delay
+    });
+    delay += count * config.interval * 0.62 + 0.5 + rng() * 0.6;
+  }
+
+  if (
+    w >= WAVE_CONFIG.bossStartWave &&
+    (w - WAVE_CONFIG.bossStartWave) % WAVE_CONFIG.bossEvery === 0
+  ) {
+    const count = 1 + Math.floor((w - WAVE_CONFIG.bossStartWave) / WAVE_CONFIG.bossCountGrowthWaves);
+    groups.push({
+      type: 'boss',
+      count,
+      interval: 6,
+      delay: delay + 1.5
     });
   }
 
@@ -80,16 +159,6 @@ export function createWave(seed, difficultyKey = 'normal', index = 1, giant = fa
       delay: delay + 1.5,
       patrol: true
     });
-  }
-
-  const rawCount = groups.reduce((sum, group) => sum + group.count, 0);
-  if (rawCount > WAVE_CONFIG.enemyCap) {
-    const scale = WAVE_CONFIG.enemyCap / rawCount;
-    for (const group of groups) {
-      if (group.type === 'elite') continue;
-      group.count = Math.max(1, Math.round(group.count * scale));
-    }
-    hpMul *= Math.min(2.6, Math.sqrt(rawCount / WAVE_CONFIG.enemyCap));
   }
 
   return {

@@ -42,6 +42,7 @@ import {
   applySpreadResistanceDebuff,
   applySweepResistanceDebuff,
   getDarkReflectRatio,
+  getIceActionFactor,
   getIceSlowFactor,
   getLightDamageMultiplier,
   getLightResistanceDebuff,
@@ -50,6 +51,7 @@ import {
   ICE_SLOW_PER_LAYER,
   getStasisAttackFactor,
   getStasisMovementFactor,
+  getStasisSkillFactor,
   getVisibleAttachments,
   resolveReactions,
   SCORCH_TICK_SECONDS,
@@ -525,15 +527,15 @@ function makeTowerModel(type) {
 function enemyBodyGeometry(type) {
   if (enemyGeometryCache.has(type.id)) return enemyGeometryCache.get(type.id);
   let geometry;
-  if (type.id === 'grunt') {
+  if (type.id === 'grunt' || type.id === 'elite' || type.id === 'shaman' || type.id === 'eliteShaman') {
     geometry = new THREE.CapsuleGeometry(type.size * 0.34, type.size * 0.42, 4, 8);
   } else if (type.id === 'runner') {
     geometry = new THREE.OctahedronGeometry(type.size * 0.56, 0);
-  } else if (type.id === 'tank') {
+  } else if (type.id === 'tank' || type.id === 'eliteTank') {
     geometry = new THREE.BoxGeometry(type.size, type.height * 0.82, type.size);
   } else if (type.id === 'bombardier') {
     geometry = new THREE.CapsuleGeometry(type.size * 0.36, type.size * 0.5, 4, 8);
-  } else if (type.id === 'flyer') {
+  } else if (type.id === 'flyer' || type.id === 'eliteFlyer') {
     geometry = new THREE.ConeGeometry(type.size * 0.48, type.height, 6);
   } else {
     geometry = new THREE.IcosahedronGeometry(type.size * 0.56, 0);
@@ -557,7 +559,7 @@ function makeEnemyModel(type) {
   body.castShadow = true;
   group.add(body);
 
-  if (type.id === 'tank') {
+  if (type.id === 'tank' || type.id === 'eliteTank') {
     const plate = new THREE.Mesh(new THREE.BoxGeometry(type.size * 0.7, type.height * 0.3, type.size * 0.7), material);
     plate.position.y = type.height * 0.75;
     plate.castShadow = true;
@@ -565,6 +567,25 @@ function makeEnemyModel(type) {
   }
 
   if (type.id === 'elite') {
+    const helm = new THREE.Mesh(
+      new THREE.BoxGeometry(type.size * 0.5, type.height * 0.18, type.size * 0.5),
+      new THREE.MeshStandardMaterial({ color: 0x581c87, roughness: 0.45, metalness: 0.55 })
+    );
+    helm.position.y = type.height * 0.82;
+    helm.castShadow = true;
+    group.add(helm);
+  }
+
+  if (type.id === 'shaman' || type.id === 'eliteShaman') {
+    const orb = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(type.size * 0.2, 1),
+      new THREE.MeshBasicMaterial({ color: 0x99f6e4 })
+    );
+    orb.position.set(type.size * 0.45, type.height * 0.72, type.size * 0.25);
+    group.add(orb);
+  }
+
+  if (type.id === 'boss') {
     const core = new THREE.Mesh(
       new THREE.IcosahedronGeometry(type.size * 0.22, 0),
       new THREE.MeshBasicMaterial({ color: 0xfdf4ff })
@@ -590,7 +611,7 @@ function makeEnemyModel(type) {
     group.add(barrel);
   }
 
-  if (type.id === 'flyer') {
+  if (type.id === 'flyer' || type.id === 'eliteFlyer') {
     const wingMaterial = new THREE.MeshBasicMaterial({
       color: 0xbfdbfe,
       transparent: true,
@@ -2006,7 +2027,7 @@ export class Game {
   }
 
   onPointerDown(event) {
-    if (event.button === 0) {
+    if (event.button === 2) {
       event.preventDefault();
       this.orbit.panning = true;
       this.orbit.lastX = event.clientX;
@@ -2033,7 +2054,7 @@ export class Game {
 
     const basePos = this.cellToWorld(this.map.goal.x, this.map.goal.y);
     if (
-      event.button === 2 &&
+      event.button === 0 &&
       Math.hypot(this.tmpPoint.x - basePos.x, this.tmpPoint.z - basePos.z) <= TILE_SIZE * 1.7
     ) {
       this.tryRepairBase();
@@ -2047,7 +2068,7 @@ export class Game {
       return;
     }
 
-    if (event.button !== 2) return;
+    if (event.button !== 0) return;
     const tower = this.towerAt(cell.x, cell.y);
     if (tower) {
       this.selectedTower = tower;
@@ -2604,7 +2625,7 @@ export class Game {
   }
 
   getEnemyAttackDelay(enemy) {
-    return 1.2 / getStasisAttackFactor(enemy);
+    return (1.2 * getIceActionFactor(enemy)) / getStasisAttackFactor(enemy);
   }
 
   findDrunkenTarget(enemy) {
@@ -2897,7 +2918,7 @@ export class Game {
     this.completeWaveStateIfDone(state);
   }
 
-  spawnEnemy(typeId, spawnIndex = 0, waveIndex = null) {
+  spawnEnemy(typeId, spawnIndex = 0, waveIndex = null, options = {}) {
     const effectiveWaveIndex =
       Number.isInteger(waveIndex) && this.waves[waveIndex]
         ? waveIndex
@@ -2907,14 +2928,40 @@ export class Game {
     const model = makeEnemyModel(type);
     const state = this.waveStates.get(effectiveWaveIndex);
     const hp = type.hp * wave.hpMul * (state?.repairHpMultiplier ?? this.repairHpMultiplier);
-    const spawn = this.map.spawns[spawnIndex % this.map.spawns.length];
-    if (!spawn) {
+    const spawn = options.cell || this.map.spawns[spawnIndex % this.map.spawns.length];
+    if (!spawn && !type.orbitalFlyer) {
       this.failSpawn(effectiveWaveIndex);
       return;
     }
     let routePoints;
     let routeTotal;
-    if (type.flying) {
+    let orbital = null;
+    if (type.orbitalFlyer) {
+      const center = this.cellToWorld(this.map.goal.x, this.map.goal.y);
+      const maxRadius = Math.max(this.map.W, this.map.H) * TILE_SIZE * 0.46;
+      const minRadius = 2.2 * TILE_SIZE;
+      const angle = this.rng() * Math.PI * 2;
+      const radius = maxRadius;
+      const start = new THREE.Vector3(
+        center.x + Math.cos(angle) * radius,
+        0,
+        center.z + Math.sin(angle) * radius
+      );
+      routePoints = [start.clone(), start.clone()];
+      routeTotal = 0;
+      orbital = {
+        center,
+        angle,
+        radius,
+        minRadius,
+        maxRadius,
+        direction: this.rng() < 0.5 ? 1 : -1,
+        phase: 'approach',
+        angularSpeed: 0.28,
+        approachSpeed: 0.32,
+        retreatSpeed: 0.55
+      };
+    } else if (type.flying) {
       const start = this.cellToWorld(spawn.x, spawn.y);
       const center = this.cellToWorld((this.map.W - 1) / 2, (this.map.H - 1) / 2);
       const end = {
@@ -3001,6 +3048,9 @@ export class Game {
       waveIndex: effectiveWaveIndex,
       offset: (this.rng() * 2 - 1) * 0.34,
       towerAttackTimer: 0.8 + this.rng() * 0.8,
+      healTimer: 1.2 + this.rng() * 1.2,
+      summonTimer: 4 + this.rng() * 3,
+      orbital,
       reward: Math.round(type.reward * wave.rewardMul),
       status: createStatus(),
       resistances: createResistances(
@@ -3018,11 +3068,17 @@ export class Game {
       retired: false
     };
 
-    const dir = this.tmpDir.subVectors(routePoints[1], routePoints[0]).normalize();
-    const px = routePoints[0].x - dir.z * enemy.offset;
-    const pz = routePoints[0].z + dir.x * enemy.offset;
-    enemy.mesh.position.set(px, enemy.altitude, pz);
-    enemy.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+    if (orbital) {
+      enemy.remaining = orbital.radius;
+      enemy.mesh.position.set(routePoints[0].x, enemy.altitude, routePoints[0].z);
+      enemy.mesh.rotation.y = orbital.angle + Math.PI / 2;
+    } else {
+      const dir = this.tmpDir.subVectors(routePoints[1], routePoints[0]).normalize();
+      const px = routePoints[0].x - dir.z * enemy.offset;
+      const pz = routePoints[0].z + dir.x * enemy.offset;
+      enemy.mesh.position.set(px, enemy.altitude, pz);
+      enemy.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+    }
     enemy.mesh.scale.setScalar(0.25);
     this.scene.add(enemy.mesh);
     this.enemies.push(enemy);
@@ -3057,6 +3113,15 @@ export class Game {
 
   damageEnemy(enemy, amount, packet = {}) {
     if (enemy.dead) return;
+    if (
+      enemy.type.immuneChance &&
+      !packet.trueDamage &&
+      this.rng() < enemy.type.immuneChance
+    ) {
+      enemy.flash = 0.1;
+      this.castEffect(enemy.mesh.position, 0xfef08a, 0.8, 0.24);
+      return;
+    }
     const damageType = packet.damageType || 'physical';
     let finalAmount = amount;
     if (!packet.trueDamage) {
@@ -3237,18 +3302,27 @@ export class Game {
             const dz = target.mesh.position.z - enemy.mesh.position.z;
             if (dx * dx + dz * dz <= radiusSq) targets.push(target);
           }
-          let highest = null;
           for (const target of targets) {
-            if (!highest || target.maxHp > highest.maxHp) highest = target;
-          }
-          for (const target of targets) {
-            const ratio = target === highest ? event.highestTrueRatio : event.otherTrueRatio;
-            this.damageEnemy(target, target.maxHp * ratio, {
+            this.damageEnemy(target, target.maxHp * event.trueRatio, {
               damageType: 'magic',
               element: 'none',
               attach: 0,
               source: 'annihilation',
               trueDamage: true
+            });
+          }
+          let extraTarget = null;
+          for (const target of targets) {
+            if (target.dead) continue;
+            if (!extraTarget || target.maxHp > extraTarget.maxHp) extraTarget = target;
+          }
+          if (extraTarget) {
+            this.damageEnemy(extraTarget, extraTarget.maxHp * event.extraMagicRatio, {
+              damageType: 'magic',
+              element: 'none',
+              attach: 0,
+              source: 'annihilation',
+              reaction: true
             });
           }
           for (const target of targets) {
@@ -3478,6 +3552,14 @@ export class Game {
           critChance: cast.critChance || 0,
           critDamage: cast.critDamage || 0
         });
+        if (!enemy.dead && cast.untypedDamage > 0) {
+          this.damageEnemy(enemy, cast.untypedDamage, {
+            damageType: 'magic',
+            element: 'none',
+            attach: 0,
+            source: 'cursed-untyped'
+          });
+        }
       }
       const color = cast.element === 'none' ? 0x818cf8 : ELEMENTS[cast.element].color;
       this.castEffect(cast.position, color, cast.radius * 1.8, 0.38);
@@ -3507,14 +3589,17 @@ export class Game {
 
     const attributes = elements.length > 0 ? [...new Set(elements)] : ['none'];
     const lastBonus = consumedHp * tower.type.damagePerHp;
+    const untypedBonus = consumedHp * (tower.type.untypedBonusRatio || 0);
     const origin = tower.mesh.position.clone();
     for (let i = 0; i < tower.type.pickCount; i++) {
+      const isLast = i === tower.type.pickCount - 1;
       this.magicCasts.push({
         time: this.waveClock + i * tower.type.castInterval,
         element: attributes[Math.floor(this.rng() * attributes.length)],
         position: tower.mesh.position.clone(),
         origin: origin.clone(),
-        damage: tower.stats.damage + (i === tower.type.pickCount - 1 ? lastBonus : 0),
+        damage: tower.stats.damage + (isLast ? lastBonus : 0),
+        untypedDamage: isLast ? untypedBonus : 0,
         radius: tower.stats.range,
         critChance: tower.stats.critChance || 0,
         critDamage: tower.stats.critDamage || 0,
@@ -3579,6 +3664,125 @@ export class Game {
     }
   }
 
+  updateEnemyHealer(enemy, dt) {
+    enemy.healTimer -= dt;
+    if (enemy.healTimer > 0) return;
+    const interval =
+      (enemy.type.healInterval * getIceActionFactor(enemy)) /
+      getStasisSkillFactor(enemy);
+    enemy.healTimer += Math.max(0.2, interval);
+    const amount = enemy.maxHp * (enemy.type.healRatio || 0);
+    const radiusSq = (enemy.type.healRadius * TILE_SIZE) ** 2;
+    const corrupted = enemy.status.drunken && this.rng() < 0.5;
+    for (const target of this.enemies) {
+      if (target.dead) continue;
+      const dx = target.mesh.position.x - enemy.mesh.position.x;
+      const dz = target.mesh.position.z - enemy.mesh.position.z;
+      if (dx * dx + dz * dz > radiusSq) continue;
+      if (corrupted) {
+        this.damageEnemy(target, amount, {
+          damageType: 'physical',
+          element: 'none',
+          attach: 0,
+          source: 'drunken-heal'
+        });
+      } else {
+        this.healEnemy(target, amount);
+      }
+    }
+    this.castEffect(
+      enemy.mesh.position,
+      corrupted ? 0xfb7185 : 0x34d399,
+      enemy.type.healRadius * 1.1,
+      0.32
+    );
+  }
+
+  healEnemy(enemy, amount) {
+    if (!enemy || enemy.dead) return;
+    enemy.hp = Math.min(enemy.maxHp, enemy.hp + amount);
+    this.castEffect(enemy.mesh.position, 0x34d399, 0.55, 0.22);
+  }
+
+  findBossSummonCell(boss) {
+    const bossCell = this.cellFromWorld(boss.mesh.position);
+    const goal = this.map.goal;
+    const allowed = [];
+    const nearby = [];
+    for (const cell of this.pathGraph.cells) {
+      if (Math.hypot(cell.x - goal.x, cell.y - goal.y) < 9) continue;
+      allowed.push(cell);
+      if (bossCell && Math.hypot(cell.x - bossCell.x, cell.y - bossCell.y) <= 7) {
+        nearby.push(cell);
+      }
+    }
+    const pool = nearby.length > 0 ? nearby : allowed;
+    if (pool.length === 0) return null;
+    return pool[Math.floor(this.rng() * pool.length)];
+  }
+
+  pickBossSummonType(waveIndex) {
+    const waveNumber = waveIndex + 1;
+    const choices = ['elite'];
+    if (waveNumber >= 25) choices.push('eliteShaman');
+    if (waveNumber >= 30) choices.push('eliteTank');
+    return choices[Math.floor(this.rng() * choices.length)];
+  }
+
+  updateBossSummon(enemy, dt) {
+    enemy.summonTimer -= dt;
+    if (enemy.summonTimer > 0) return;
+    enemy.summonTimer +=
+      (enemy.type.summonInterval / getStasisSkillFactor(enemy));
+    const count = enemy.type.summonCount || 1;
+    for (let i = 0; i < count; i++) {
+      const cell = this.findBossSummonCell(enemy);
+      if (!cell) break;
+      this.spawnEnemy(
+        this.pickBossSummonType(enemy.waveIndex),
+        0,
+        enemy.waveIndex,
+        { cell }
+      );
+    }
+    this.castEffect(enemy.mesh.position, 0xa855f7, 2.2, 0.45);
+  }
+
+  updateOrbitalFlyer(enemy, dt) {
+    const orbital = enemy.orbital;
+    if (!orbital) return;
+    const movementFactor = getIceSlowFactor(enemy) * getStasisMovementFactor(enemy);
+    orbital.angle += orbital.direction * orbital.angularSpeed * dt * movementFactor;
+    if (orbital.phase === 'approach') {
+      orbital.radius -= orbital.approachSpeed * TILE_SIZE * dt * movementFactor;
+      if (orbital.radius <= orbital.minRadius) {
+        orbital.radius = orbital.minRadius;
+        orbital.phase = 'retreat';
+        this.damageBase(enemy.type.baseAttackDamage || 1);
+        this.castEffect(enemy.mesh.position, 0xef4444, 1.6, 0.4);
+      }
+    } else {
+      orbital.radius += orbital.retreatSpeed * TILE_SIZE * dt * movementFactor;
+      if (orbital.radius >= orbital.maxRadius) {
+        orbital.radius = orbital.maxRadius;
+        orbital.phase = 'approach';
+      }
+    }
+    const x = orbital.center.x + Math.cos(orbital.angle) * orbital.radius;
+    const z = orbital.center.z + Math.sin(orbital.angle) * orbital.radius;
+    enemy.mesh.position.set(x, enemy.altitude, z);
+    enemy.mesh.rotation.y = orbital.angle + Math.PI / 2;
+    enemy.remaining = orbital.radius;
+  }
+
+  damageBase(amount) {
+    if (this.phase === 'won' || this.phase === 'lost') return;
+    this.lives = Math.max(0, this.lives - amount);
+    this.toast(`基地受击 -${amount} 生命`);
+    this.updateHud();
+    if (this.lives <= 0) this.endGame(false);
+  }
+
   updateEnemies(dt) {
     for (const enemy of this.enemies) {
       if (enemy.dead) continue;
@@ -3590,28 +3794,49 @@ export class Game {
       tickLightning(enemy, dt, (target, amount, packet) => this.damageEnemy(target, amount, packet));
       tickWind(enemy, dt, (target, amount, packet, radius) => this.applyWindTick(target, amount, packet, radius));
       tickShock(enemy, dt, (target, shock) => this.applyShockTick(target, shock));
-      tickScorch(enemy, dt, (target, amount, packet, radius) =>
-        this.applyScorchTick(target, amount, packet, radius)
+      tickScorch(
+        enemy,
+        dt,
+        (target, amount, packet, radius) =>
+          this.applyScorchTick(target, amount, packet, radius),
+        (target, amount) =>
+          this.damageEnemy(target, amount, {
+            damageType: 'magic',
+            element: 'none',
+            attach: 0,
+            source: 'scorch-maxhp',
+            trueDamage: true
+          })
       );
       if (enemy.dead) continue;
 
-      const slow = getIceSlowFactor(enemy);
-      const speed = enemy.baseSpeed * slow * getStasisMovementFactor(enemy);
+      if (enemy.type.healer) this.updateEnemyHealer(enemy, dt);
 
-      enemy.routeDist += speed * dt;
-      enemy.remaining = enemy.routeTotal - enemy.routeDist;
-      if (enemy.routeDist >= enemy.routeTotal) {
-        if (enemy.noLeak) this.retireEnemy(enemy);
-        else this.leakEnemy(enemy);
-        continue;
+      let px;
+      let pz;
+      if (enemy.type.orbitalFlyer) {
+        this.updateOrbitalFlyer(enemy, dt);
+        px = enemy.mesh.position.x;
+        pz = enemy.mesh.position.z;
+      } else {
+        const slow = getIceSlowFactor(enemy);
+        const speed = enemy.baseSpeed * slow * getStasisMovementFactor(enemy);
+
+        enemy.routeDist += speed * dt;
+        enemy.remaining = enemy.routeTotal - enemy.routeDist;
+        if (enemy.routeDist >= enemy.routeTotal) {
+          if (enemy.noLeak) this.retireEnemy(enemy);
+          else this.leakEnemy(enemy);
+          continue;
+        }
+
+        this.sampleRoute(enemy, this.tmpPos, this.tmpDir);
+        px = this.tmpPos.x - this.tmpDir.z * enemy.offset;
+        pz = this.tmpPos.z + this.tmpDir.x * enemy.offset;
+        enemy.mesh.position.set(px, enemy.altitude, pz);
+        const yaw = Math.atan2(this.tmpDir.x, this.tmpDir.z);
+        enemy.mesh.rotation.y = dampAngle(enemy.mesh.rotation.y, yaw, dt * 9);
       }
-
-      this.sampleRoute(enemy, this.tmpPos, this.tmpDir);
-      const px = this.tmpPos.x - this.tmpDir.z * enemy.offset;
-      const pz = this.tmpPos.z + this.tmpDir.x * enemy.offset;
-      enemy.mesh.position.set(px, enemy.altitude, pz);
-      const yaw = Math.atan2(this.tmpDir.x, this.tmpDir.z);
-      enemy.mesh.rotation.y = dampAngle(enemy.mesh.rotation.y, yaw, dt * 9);
 
       const dominant = dominantElement(enemy);
       if (enemy.flash > 0) {
@@ -3640,13 +3865,16 @@ export class Game {
       }
 
       const ratio = clamp(enemy.hp / enemy.maxHp, 0, 1);
-      enemy.bar.visible = ratio < 1 || enemy.type.id === 'elite';
+      enemy.bar.visible = ratio < 1 || !!enemy.type.elite || !!enemy.type.boss;
       if (enemy.bar.visible) {
         enemy.bar.position.set(px, enemy.altitude + enemy.type.height + 0.55, pz);
         enemy.barFill.scale.x = Math.max(0.001, enemy.barWidth * ratio);
         enemy.barFill.position.x = -enemy.barWidth / 2 + (enemy.barWidth * ratio) / 2;
         enemy.barFill.material.color.setHex(ratio > 0.5 ? 0x4ade80 : ratio > 0.25 ? 0xfacc15 : 0xef4444);
       }
+
+      if (enemy.type.summonInterval) this.updateBossSummon(enemy, dt);
+      if (enemy.type.noAttack) continue;
 
       enemy.towerAttackTimer -= dt;
       if (enemy.type.bombard) {
@@ -3667,7 +3895,8 @@ export class Game {
               0.08
             );
             enemy.towerAttackTimer =
-              enemy.type.bombInterval / getStasisAttackFactor(enemy);
+              (enemy.type.bombInterval * getIceActionFactor(enemy)) /
+              getStasisAttackFactor(enemy);
           } else {
             enemy.towerAttackTimer = 0.4;
           }
@@ -3676,7 +3905,9 @@ export class Game {
       }
 
       if (enemy.towerAttackTimer <= 0) {
-        const tower = this.findTowerInContact(enemy);
+        const tower = enemy.type.attackRange
+          ? this.findTowerInRange(enemy, enemy.type.attackRange)
+          : this.findTowerInContact(enemy);
         const drunkTarget = enemy.status.drunken ? this.findDrunkenTarget(enemy) : null;
         let attacked = false;
         if (drunkTarget && (!tower || this.rng() < 0.5)) {

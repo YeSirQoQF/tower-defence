@@ -11,8 +11,8 @@ export const RESISTANCE_KEYS = Object.freeze([
 ]);
 
 export const DAMAGE_RESISTANCE_KEYS = Object.freeze(['physical', 'magic']);
-export const RESISTANCE_HARD_CAP = 0.8;
-export const NORMAL_RESISTANCE_CAP = 0.6;
+export const RESISTANCE_HARD_CAP = 0.9;
+export const NORMAL_RESISTANCE_CAP = 0.7;
 export const PHYSICAL_MAGIC_SUM_CAP = 1.4;
 export const RESISTANCE_GROWTH_PER_WAVE = 0.003;
 export const TANK_MIN_RESISTANCE = 0.05;
@@ -43,8 +43,9 @@ export function createResistances(
     const v = Math.max(0, Math.min(1, rng()));
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(Math.PI * 2 * v);
   };
+  const attributeScale = type.attributeResistScale ?? 1;
   for (const key of RESISTANCE_KEYS) {
-    resistances[key] = clamp(mean + normal() * variance, 0, cap);
+    resistances[key] = clamp((mean + normal() * variance) * attributeScale, 0, cap);
   }
 
   const pairSum = resistances.physical + resistances.magic;
@@ -52,14 +53,6 @@ export function createResistances(
     const scale = PHYSICAL_MAGIC_SUM_CAP / pairSum;
     resistances.physical = clamp(resistances.physical * scale, TANK_MIN_RESISTANCE, cap);
     resistances.magic = clamp(resistances.magic * scale, TANK_MIN_RESISTANCE, cap);
-  }
-
-  if (cap > NORMAL_RESISTANCE_CAP && RESISTANCE_KEYS.every((key) => resistances[key] > NORMAL_RESISTANCE_CAP)) {
-    let weakest = RESISTANCE_KEYS[0];
-    for (const key of RESISTANCE_KEYS) {
-      if (resistances[key] < resistances[weakest]) weakest = key;
-    }
-    resistances[weakest] = NORMAL_RESISTANCE_CAP;
   }
 
   return {

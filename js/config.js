@@ -82,7 +82,7 @@ export const DIFFICULTIES = Object.freeze({
     budgetMul: 0.92,
     giantStrongholdRate: 0.5,
     eliteStartWave: 13,
-    attrResistStart: 0.02,
+    attrResistStart: 0.1,
     attrResistGrowth: 0.0025,
     attrResistVariance: 0.025
   },
@@ -115,7 +115,7 @@ export const DIFFICULTIES = Object.freeze({
     budgetMul: 1,
     giantStrongholdRate: 1,
     eliteStartWave: 10,
-    attrResistStart: 0.04,
+    attrResistStart: 0.12,
     attrResistGrowth: 0.004,
     attrResistVariance: 0.03
   },
@@ -148,7 +148,7 @@ export const DIFFICULTIES = Object.freeze({
     budgetMul: 1.28,
     giantStrongholdRate: 2,
     eliteStartWave: 7,
-    attrResistStart: 0.06,
+    attrResistStart: 0.16,
     attrResistGrowth: 0.0055,
     attrResistVariance: 0.035
   }
@@ -198,7 +198,7 @@ export const TOWER_TYPES = Object.freeze({
     damageType: 'physical',
     element: 'none',
     coinTower: true,
-    income: 9,
+    income: 3,
     incomeInterval: 4,
     color: 0xfacc15,
     accent: 0xb45309,
@@ -254,14 +254,15 @@ export const TOWER_TYPES = Object.freeze({
     element: 'none',
     curseTower: true,
     recognizeRange: 2,
-    pickCount: 7,
+    pickCount: 4,
     castInterval: 0.1,
     hpConsumeRatio: 0.04,
     damagePerHp: 1.6,
+    untypedBonusRatio: 0.3,
     reactionLevels: 6,
     color: 0x7c3aed,
     accent: 0x4c1d95,
-    desc: '抽取属性七连发 · 消耗塔血强化末段'
+    desc: '抽取属性四连发 · 末段附加无属性伤害'
   },
   frost: {
     id: 'frost',
@@ -438,9 +439,45 @@ export const ENEMY_TYPES = Object.freeze({
       magic: 0.25,
     }
   },
+  shaman: {
+    id: 'shaman',
+    name: '萨满',
+    hp: 90,
+    speed: 1.15,
+    cost: 5,
+    weight: 0.9,
+    reward: 10,
+    interval: 1.5,
+    leak: 1,
+    score: 3,
+    towerDamage: 0,
+    noAttack: true,
+    healer: true,
+    healInterval: 3.2,
+    healRadius: 2.2,
+    healRatio: 0.07,
+    detourChance: 0.2,
+    size: 0.8,
+    height: 0.9,
+    color: 0x5eead4,
+    accent: 0x0f766e,
+    attributeResistScale: 0.55,
+    resistances: {
+      physical: 0.12,
+      magic: 0.18,
+
+
+
+
+
+
+
+
+    }
+  },
   elite: {
     id: 'elite',
-    name: '精英',
+    name: '精英·步兵',
     hp: 420,
     speed: 0.78,
     cost: 25,
@@ -450,15 +487,168 @@ export const ENEMY_TYPES = Object.freeze({
     leak: 5,
     score: 20,
     towerDamage: 12,
+    attackRange: 2.2,
     detourChance: 0.08,
-    size: 1.5,
-    height: 1.5,
+    size: 1.55,
+    height: 1.55,
     color: 0xf0abfc,
     accent: 0xa21caf,
-    resistanceCap: 0.8,
+    elite: true,
+    resistanceCap: 0.9,
     resistances: {
       physical: 0.65,
       magic: 0.55,
+    }
+  },
+  eliteFlyer: {
+    id: 'eliteFlyer',
+    name: '精英·飞行',
+    hp: 520,
+    speed: 1.7,
+    cost: 28,
+    weight: 0.8,
+    reward: 45,
+    interval: 2.8,
+    leak: 0,
+    score: 20,
+    towerDamage: 0,
+    noAttack: true,
+    noLeak: true,
+    flying: true,
+    orbitalFlyer: true,
+    baseAttackDamage: 1,
+    altitude: 2.35,
+    detourChance: 0,
+    size: 1.35,
+    height: 1.2,
+    color: 0xbfdbfe,
+    accent: 0x1d4ed8,
+    elite: true,
+    resistanceCap: 0.9,
+    resistances: {
+      physical: 0.6,
+      magic: 0.55,
+
+
+
+
+
+
+
+
+    }
+  },
+  eliteTank: {
+    id: 'eliteTank',
+    name: '精英·重甲',
+    hp: 760,
+    speed: 0.62,
+    cost: 30,
+    weight: 0.7,
+    reward: 55,
+    interval: 2.6,
+    leak: 5,
+    score: 25,
+    towerDamage: 16,
+    immuneChance: 0.3,
+    minWave: 30,
+    detourChance: 0.06,
+    size: 1.75,
+    height: 1.55,
+    color: 0xfca5a5,
+    accent: 0xb91c1c,
+    elite: true,
+    resistanceCap: 0.9,
+    attributeResistScale: 1.1,
+    resistances: {
+      physical: 0.78,
+      magic: 0.5,
+
+
+
+
+
+
+
+
+    }
+  },
+  eliteShaman: {
+    id: 'eliteShaman',
+    name: '精英·萨满',
+    hp: 950,
+    speed: 0.7,
+    cost: 32,
+    weight: 0.65,
+    reward: 60,
+    interval: 3,
+    leak: 5,
+    score: 25,
+    towerDamage: 4,
+    healer: true,
+    healInterval: 5.5,
+    healRadius: 4.2,
+    healRatio: 0.1,
+    minWave: 25,
+    detourChance: 0.1,
+    size: 1.45,
+    height: 1.45,
+    color: 0x99f6e4,
+    accent: 0x0f766e,
+    elite: true,
+    resistanceCap: 0.9,
+    attributeResistScale: 0.75,
+    resistances: {
+      physical: 0.45,
+      magic: 0.35,
+
+
+
+
+
+
+
+
+    }
+  },
+  boss: {
+    id: 'boss',
+    name: '首领',
+    hp: 5000,
+    speed: 0.45,
+    cost: 120,
+    weight: 0,
+    reward: 500,
+    interval: 6,
+    leak: 0,
+    score: 100,
+    towerDamage: 35,
+    boss: true,
+    noLeak: true,
+    noBaseAttack: true,
+    attackRange: 5,
+    summonInterval: 14,
+    summonCount: 2,
+    summonMinDistanceFromBase: 9,
+    detourChance: 0,
+    size: 2.8,
+    height: 2.6,
+    color: 0xfdf4ff,
+    accent: 0xa21caf,
+    elite: true,
+    resistanceCap: 0.9,
+    attributeResistScale: 1.1,
+    resistances: {
+      physical: 0.72,
+      magic: 0.62,
+
+
+
+
+
+
+
+
     }
   },
   bombardier: {
@@ -527,7 +717,13 @@ export const WAVE_CONFIG = Object.freeze({
   eliteEvery: 4,
   endlessGrowth: 1.1,
   endlessHpGrowth: 1.065,
-  enemyCap: 160
+  lateCountGrowth: 0.06,
+  budgetToHpExponent: 0.45,
+  elitePromotionBase: 0.002,
+  elitePromotionGrowth: 0.0008,
+  bossStartWave: 50,
+  bossEvery: 5,
+  bossCountGrowthWaves: 50
 });
 
 export const ECONOMY = Object.freeze({
