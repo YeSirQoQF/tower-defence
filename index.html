@@ -14,9 +14,44 @@
     }
   </script>
 </head>
-<body>
+<body class="home-mode">
   <div id="app"></div>
   <div id="vignette"></div>
+
+  <div id="home-screen">
+    <div class="home-shell">
+      <header class="home-brand">
+        <p class="eyebrow">3D TOWER DEFENCE</p>
+        <h1>3D塔防游戏</h1>
+        <p class="home-subtitle">选择模式与难度，开始一局</p>
+      </header>
+
+      <main class="home-setup">
+        <div class="home-fields">
+          <label class="home-field" for="home-mode">
+            <span>游戏模式</span>
+            <select id="home-mode"></select>
+          </label>
+          <label class="home-field" for="home-difficulty">
+            <span>难度</span>
+            <select id="home-difficulty"></select>
+          </label>
+        </div>
+        <p class="home-hint" id="home-hint"></p>
+        <div class="home-actions">
+          <button id="home-start" class="primary" type="button">
+            <span>开始游戏</span>
+            <small>新种子</small>
+          </button>
+          <button id="home-restart" class="ghost" type="button">
+            <span>重新开始</span>
+            <small>当前种子</small>
+          </button>
+        </div>
+        <button id="home-help" class="home-help ghost" type="button">游戏说明</button>
+      </main>
+    </div>
+  </div>
 
   <div id="file-warning">
     <div class="warning-card">
@@ -61,14 +96,6 @@
         </div>
       </div>
 
-      <div class="seed-area">
-        <button id="btn-copy" class="ghost" title="复制当前种子链接">
-          种子 <b id="seed-label">----</b>
-        </button>
-        <select id="mode" title="模式"></select>
-        <select id="difficulty" title="难度"></select>
-        <button id="btn-new" class="ghost">新地图</button>
-      </div>
     </header>
 
     <aside id="wave-panel">
@@ -122,6 +149,45 @@
         <button id="btn-again" class="ghost">换一张地图</button>
       </div>
       <p class="seed-line">种子 <b id="overlay-seed"></b></p>
+    </div>
+  </div>
+
+  <div id="pause-menu" class="hidden">
+    <div class="pause-card">
+      <p class="eyebrow">PAUSED</p>
+      <h1>暂停</h1>
+      <p class="pause-meta" id="pause-meta"></p>
+      <div class="pause-seed-row">
+        <span>当前种子</span>
+        <b id="pause-seed">----</b>
+        <button id="pause-copy" class="ghost" type="button">复制</button>
+      </div>
+      <div class="pause-actions">
+        <button id="pause-continue" class="primary" type="button">继续</button>
+        <button id="pause-new" class="ghost" type="button">新地图</button>
+        <button id="pause-home" class="ghost" type="button">返回首页</button>
+      </div>
+      <p class="pause-hint">Esc 关闭菜单</p>
+    </div>
+  </div>
+
+  <div id="faction-modal" class="hidden">
+    <div class="faction-card">
+      <p class="eyebrow">CHOOSE YOUR PATH</p>
+      <h1>选择本局流派</h1>
+      <p class="faction-desc">选择光或暗作为主路线。未选择的另一种属性塔本局最多建造 1 座。</p>
+      <div class="faction-actions">
+        <button id="faction-light" class="faction-option light" type="button">
+          <strong>曜辉 · 光</strong>
+          <span>直伤流</span>
+          <small>未选属性：玄蚀塔最多 1 座</small>
+        </button>
+        <button id="faction-dark" class="faction-option dark" type="button">
+          <strong>玄蚀 · 暗</strong>
+          <span>反应流</span>
+          <small>未选属性：曜辉塔最多 1 座</small>
+        </button>
+      </div>
     </div>
   </div>
 

@@ -189,7 +189,7 @@ export const TOWER_TYPES = Object.freeze({
   coin: {
     id: 'coin',
     name: '铸币塔',
-    key: '3',
+    key: '',
     cost: 50,
     hp: 130,
     range: 0,
@@ -207,7 +207,7 @@ export const TOWER_TYPES = Object.freeze({
   supply: {
     id: 'supply',
     name: '供能塔',
-    key: '4',
+    key: '3',
     cost: 80,
     hp: 160,
     range: 3.6,
@@ -224,7 +224,7 @@ export const TOWER_TYPES = Object.freeze({
   magic: {
     id: 'magic',
     name: '魔法塔',
-    key: '5',
+    key: '4',
     cost: 300,
     hp: 150,
     range: 4.2,
@@ -244,7 +244,7 @@ export const TOWER_TYPES = Object.freeze({
   cursed: {
     id: 'cursed',
     name: '诅咒塔',
-    key: '6',
+    key: '=',
     cost: 1000,
     hp: 180,
     range: 6,
@@ -267,7 +267,7 @@ export const TOWER_TYPES = Object.freeze({
   frost: {
     id: 'frost',
     name: '霜冻塔',
-    key: '7',
+    key: '5',
     cost: 75,
     hp: 110,
     range: 2.7,
@@ -282,7 +282,7 @@ export const TOWER_TYPES = Object.freeze({
   burn: {
     id: 'burn',
     name: '灼烧塔',
-    key: '8',
+    key: '6',
     cost: 95,
     hp: 130,
     range: 3,
@@ -297,7 +297,7 @@ export const TOWER_TYPES = Object.freeze({
   water: {
     id: 'water',
     name: '沧浪塔',
-    key: '9',
+    key: '7',
     cost: 125,
     hp: 125,
     range: 3,
@@ -312,7 +312,7 @@ export const TOWER_TYPES = Object.freeze({
   surge: {
     id: 'surge',
     name: '电涌塔',
-    key: '0',
+    key: '8',
     cost: 150,
     hp: 130,
     range: 3,
@@ -327,7 +327,7 @@ export const TOWER_TYPES = Object.freeze({
   wind: {
     id: 'wind',
     name: '风爆塔',
-    key: '-',
+    key: '9',
     cost: 255,
     hp: 170,
     range: 3.3,
@@ -343,7 +343,7 @@ export const TOWER_TYPES = Object.freeze({
   light: {
     id: 'light',
     name: '曜辉塔',
-    key: '=',
+    key: '0',
     cost: 800,
     hp: 115,
     range: 3.2,
@@ -358,7 +358,7 @@ export const TOWER_TYPES = Object.freeze({
   dark: {
     id: 'dark',
     name: '玄蚀塔',
-    key: '[',
+    key: '-',
     cost: 800,
     hp: 120,
     range: 3.2,
@@ -627,7 +627,10 @@ export const ENEMY_TYPES = Object.freeze({
     noLeak: true,
     noBaseAttack: true,
     attackRange: 5,
+    stopDistance: 4,
+    immuneChance: 0.3,
     summonInterval: 14,
+    stoppedSummonInterval: 8,
     summonCount: 2,
     summonMinDistanceFromBase: 9,
     detourChance: 0,
@@ -731,4 +734,5 @@ export const ECONOMY = Object.freeze({
   waveBonusBase: 30,
   waveBonusPerWave: 7
 });
+
 

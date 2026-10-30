@@ -42,6 +42,7 @@ import {
   applySpreadResistanceDebuff,
   applySweepResistanceDebuff,
   getDarkReflectRatio,
+  getDarkResistanceDebuff,
   getIceActionFactor,
   getIceSlowFactor,
   getLightDamageMultiplier,
@@ -69,12 +70,50 @@ import {
 } from './systems/status.js';
 
 const STEP = 1 / 60;
+const TOWER_ORDER = Object.freeze([
+  'gun',
+  'cannon',
+  'supply',
+  'magic',
+  'frost',
+  'burn',
+  'water',
+  'surge',
+  'wind',
+  'light',
+  'dark',
+  'cursed'
+]);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const barGeometry = new THREE.PlaneGeometry(1, 1);
 const barBackgroundMaterial = new THREE.MeshBasicMaterial({
   color: 0x05080f,
   transparent: true,
   opacity: 0.8,
+  depthWrite: false
+});
+
+function makeEliteBarBorderTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 16;
+  const context = canvas.getContext('2d');
+  const gradient = context.createLinearGradient(0, 0, 128, 0);
+  gradient.addColorStop(0, '#ff1744');
+  gradient.addColorStop(0.28, '#ff8a65');
+  gradient.addColorStop(0.52, '#f43f5e');
+  gradient.addColorStop(0.76, '#a855f7');
+  gradient.addColorStop(1, '#ff1744');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 128, 16);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+const barEliteBorderMaterial = new THREE.MeshBasicMaterial({
+  map: makeEliteBarBorderTexture(),
+  transparent: true,
   depthWrite: false
 });
 const enemyGeometryCache = new Map();
@@ -660,6 +699,9 @@ export class Game {
     this.built = 0;
     this.speed = 1;
     this.paused = false;
+    this.faction = null;
+    this.factionChoiceOpen = false;
+    this.pauseMenuOpen = false;
     this.selectedTowerType = 'gun';
     this.selectedTower = null;
     this.towerPanelTower = null;
@@ -732,6 +774,7 @@ export class Game {
     this.initHud();
     this.updateHud();
     this.updateCamera();
+    if (this.difficulty !== 'easy') this.openFactionChoice();
 
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
@@ -1435,9 +1478,6 @@ export class Game {
       wave: document.getElementById('stat-wave'),
       enemies: document.getElementById('stat-enemies'),
       score: document.getElementById('stat-score'),
-      seed: document.getElementById('seed-label'),
-      difficulty: document.getElementById('difficulty'),
-      mode: document.getElementById('mode'),
       helpModal: document.getElementById('help-modal'),
       helpButton: document.getElementById('help-button'),
       helpClose: document.getElementById('help-close'),
@@ -1457,33 +1497,25 @@ export class Game {
       overlaySeed: document.getElementById('overlay-seed'),
       toast: document.getElementById('toast'),
       pause: document.getElementById('btn-pause'),
-      copy: document.getElementById('btn-copy'),
-      newMap: document.getElementById('btn-new'),
+      pauseMenu: document.getElementById('pause-menu'),
+      pauseMeta: document.getElementById('pause-meta'),
+      pauseSeed: document.getElementById('pause-seed'),
+      pauseCopy: document.getElementById('pause-copy'),
+      pauseContinue: document.getElementById('pause-continue'),
+      pauseNew: document.getElementById('pause-new'),
+      pauseHome: document.getElementById('pause-home'),
+      factionModal: document.getElementById('faction-modal'),
+      factionLight: document.getElementById('faction-light'),
+      factionDark: document.getElementById('faction-dark'),
       retry: document.getElementById('btn-retry'),
       again: document.getElementById('btn-again')
     };
 
-    this.dom.seed.textContent = this.seed;
     this.dom.overlaySeed.textContent = this.seed;
 
-    for (const key of Object.keys(DIFFICULTIES)) {
-      const option = document.createElement('option');
-      option.value = key;
-      option.textContent = DIFFICULTIES[key].label;
-      if (key === this.difficulty) option.selected = true;
-      this.dom.difficulty.appendChild(option);
-    }
-
-    for (const key of Object.keys(MODES)) {
-      const option = document.createElement('option');
-      option.value = key;
-      option.textContent = MODES[key].label;
-      if (key === this.mode) option.selected = true;
-      this.dom.mode.appendChild(option);
-    }
-
-    this.dom.towerBar.innerHTML = Object.values(TOWER_TYPES)
-      .map((type) => {
+    this.dom.towerBar.innerHTML = this.availableTowerIds()
+      .map((typeId) => {
+        const type = TOWER_TYPES[typeId];
         const element = ELEMENTS[type.element || 'none'];
         const damageType = type.damageType === 'magic' ? '魔法' : '物理';
         const elementAttach =
@@ -1516,6 +1548,7 @@ export class Game {
               <span><i>反应易伤</i><b>30% / 6层</b></span>
               <span><i>末段耗血</i><b>${Math.round(type.hpConsumeRatio * 100)}%</b></span>
               <span><i>耗血增伤</i><b>×${type.damagePerHp}</b></span>
+              <span><i>末段无属性</i><b>耗血 ×${type.untypedBonusRatio || 0}</b></span>
               <span><i>伤害类型</i><b>${damageType}</b></span>
               <span><i>升级</i><b>暂未开放</b></span>`;
         } else if (magic) {
@@ -1547,7 +1580,7 @@ export class Game {
           : magic
             ? '可升级：反应易伤每级 +5% · 与诅咒塔共享20层 · 3 连发'
             : cursed
-              ? '识别2格内属性塔 · 7段魔法范围伤害 · 反应易伤30%（6层，与魔法塔共享20层）'
+              ? '识别2格内属性塔 · 4段魔法范围伤害 · 末段追加无属性伤害 · 反应易伤30%（与魔法塔共享20层）'
               : coin
                 ? '周期性生产金币 · 可升级'
                 : elementAttach;
@@ -1572,22 +1605,23 @@ export class Game {
     });
 
     this.dom.waveButton.addEventListener('click', () => this.startWave());
-    this.dom.copy.addEventListener('click', () => this.copyLink());
-    this.dom.newMap.addEventListener('click', () => {
-      location.href = this.urlFor(randomSeed(), this.difficulty, this.mode);
-    });
     this.dom.retry.addEventListener('click', () => {
       location.href = this.urlFor(this.seed, this.difficulty, this.mode);
     });
     this.dom.again.addEventListener('click', () => {
       location.href = this.urlFor(randomSeed(), this.difficulty, this.mode);
     });
-    this.dom.difficulty.addEventListener('change', () => {
-      location.href = this.urlFor(this.seed, this.dom.difficulty.value, this.mode);
+
+    this.dom.pauseCopy.addEventListener('click', () => this.copyLink());
+    this.dom.pauseContinue.addEventListener('click', () => this.closePauseMenu());
+    this.dom.pauseNew.addEventListener('click', () => {
+      location.href = this.urlFor(randomSeed(), this.difficulty, this.mode);
     });
-    this.dom.mode.addEventListener('change', () => {
-      location.href = this.urlFor(this.seed, this.difficulty, this.dom.mode.value);
+    this.dom.pauseHome.addEventListener('click', () => {
+      location.href = this.homeUrl();
     });
+    this.dom.factionLight.addEventListener('click', () => this.chooseFaction('light'));
+    this.dom.factionDark.addEventListener('click', () => this.chooseFaction('dark'));
 
     document.querySelectorAll('[data-speed]').forEach((button) => {
       button.addEventListener('click', () => {
@@ -1776,8 +1810,36 @@ export class Game {
     this.dom.helpModal.classList.add('hidden');
   }
 
+  availableTowerIds() {
+    return TOWER_ORDER.filter(
+      (typeId) => typeId !== 'cursed' || this.difficulty === 'easy'
+    );
+  }
+
+  isTowerAvailable(typeId) {
+    return !!TOWER_TYPES[typeId] && this.availableTowerIds().includes(typeId);
+  }
+
+  restrictedTowerId() {
+    if (this.faction === 'light') return 'dark';
+    if (this.faction === 'dark') return 'light';
+    return null;
+  }
+
+  isTowerLimitReached(typeId) {
+    if (typeId !== this.restrictedTowerId()) return false;
+    return this.towers.some((tower) => tower.type.id === typeId);
+  }
+
   selectTowerType(typeId) {
-    if (!TOWER_TYPES[typeId]) return;
+    if (!this.isTowerAvailable(typeId)) {
+      this.toast('该防御塔本局不可用');
+      return;
+    }
+    if (this.isTowerLimitReached(typeId)) {
+      this.toast(`${TOWER_TYPES[typeId].name}本局最多建造1座`);
+      return;
+    }
     this.selectedTowerType = typeId;
     this.selectedTower = null;
     this.selectedRing.visible = false;
@@ -1787,8 +1849,61 @@ export class Game {
     if (this.hoverCell) this.updateGhost(this.hoverCell);
   }
 
+  openFactionChoice() {
+    if (this.difficulty === 'easy') return;
+    this.factionChoiceOpen = true;
+    this.paused = true;
+    this.dom.factionModal.classList.remove('hidden');
+    this.dom.pause.classList.add('active');
+    this.updateHud();
+  }
+
+  chooseFaction(faction) {
+    if (faction !== 'light' && faction !== 'dark') return;
+    this.faction = faction;
+    this.factionChoiceOpen = false;
+    this.dom.factionModal.classList.add('hidden');
+    this.paused = false;
+    this.toast(faction === 'light' ? '本局流派：光' : '本局流派：暗');
+    this.updateHud();
+  }
+
+  openPauseMenu() {
+    if (this.helpOpen) {
+      this.closeHelp();
+      return;
+    }
+    if (this.factionChoiceOpen || (this.phase !== 'build' && this.phase !== 'combat')) {
+      return;
+    }
+    this.pauseMenuOpen = true;
+    this.paused = true;
+    this.dom.pauseSeed.textContent = this.seed;
+    this.dom.pauseMeta.textContent = [
+      `${this.modeConfig.label} · ${this.diff.label}`,
+      this.faction ? `流派 ${this.faction === 'light' ? '光' : '暗'}` : '全塔开放'
+    ].join('  ·  ');
+    this.dom.pauseMenu.classList.remove('hidden');
+    this.dom.pause.classList.add('active');
+    this.updateHud();
+  }
+
+  closePauseMenu() {
+    this.pauseMenuOpen = false;
+    this.paused = false;
+    this.dom.pauseMenu.classList.add('hidden');
+    this.updateHud();
+  }
+
   togglePause() {
-    if (this.helpOpen || (this.phase !== 'build' && this.phase !== 'combat')) return;
+    if (
+      this.helpOpen ||
+      this.pauseMenuOpen ||
+      this.factionChoiceOpen ||
+      (this.phase !== 'build' && this.phase !== 'combat')
+    ) {
+      return;
+    }
     this.paused = !this.paused;
     this.updateHud();
   }
@@ -1829,11 +1944,10 @@ export class Game {
   }
 
   copyLink() {
-    const url = new URL(location.href);
-    url.searchParams.set('seed', this.seed);
-    url.searchParams.set('diff', this.difficulty);
-    url.searchParams.set('mode', this.mode);
-    const link = url.toString();
+    const link = new URL(
+      this.urlFor(this.seed, this.difficulty, this.mode),
+      location.href
+    ).toString();
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard
         .writeText(link)
@@ -1849,6 +1963,16 @@ export class Game {
     url.searchParams.set('seed', seed);
     url.searchParams.set('diff', difficulty);
     url.searchParams.set('mode', mode);
+    url.searchParams.set('play', '1');
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  homeUrl() {
+    const url = new URL(location.href);
+    url.searchParams.set('seed', this.seed);
+    url.searchParams.set('diff', this.difficulty);
+    url.searchParams.set('mode', this.mode);
+    url.searchParams.delete('play');
     return `${url.pathname}${url.search}${url.hash}`;
   }
 
@@ -2027,6 +2151,7 @@ export class Game {
   }
 
   onPointerDown(event) {
+    if (this.pauseMenuOpen || this.factionChoiceOpen) return;
     if (event.button === 2) {
       event.preventDefault();
       this.orbit.panning = true;
@@ -2090,26 +2215,30 @@ export class Game {
     if (event.target && event.target.tagName === 'SELECT') return;
     const key = event.key;
     const lower = key.toLowerCase();
+    if (this.pauseMenuOpen) {
+      if (key === 'Escape') {
+        event.preventDefault();
+        this.closePauseMenu();
+      }
+      return;
+    }
+    if (this.factionChoiceOpen) return;
     if (lower === 'w' || lower === 'a' || lower === 's' || lower === 'd') {
       this.keys.add(lower);
       event.preventDefault();
       return;
     }
-    if (['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '['].includes(key)) {
-      const type = Object.values(TOWER_TYPES).find((tower) => tower.key === key);
+    if (['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='].includes(key)) {
+      const type = this.availableTowerIds()
+        .map((typeId) => TOWER_TYPES[typeId])
+        .find((tower) => tower.key === key);
       if (type) this.selectTowerType(type.id);
     } else if (key === 'Escape') {
       if (this.helpOpen) {
         this.closeHelp();
         return;
       }
-      this.selectedTowerType = null;
-      this.selectedTower = null;
-      this.selectedRing.visible = false;
-      this.setGhostType(null);
-      this.hideGhost();
-      this.hideTowerPanel();
-      this.updateHud();
+      this.openPauseMenu();
     } else if (key === ' ') {
       event.preventDefault();
       if (this.phase === 'build') this.startWave();
@@ -2131,6 +2260,14 @@ export class Game {
     if (!this.selectedTowerType) return;
     if (this.phase !== 'build' && this.phase !== 'combat') return;
     const type = TOWER_TYPES[this.selectedTowerType];
+    if (!this.isTowerAvailable(type.id)) {
+      this.toast('该防御塔本局不可用');
+      return;
+    }
+    if (this.isTowerLimitReached(type.id)) {
+      this.toast(`${type.name}本局最多建造1座`);
+      return;
+    }
     if (!this.isBuildable(x, y)) {
       this.toast('这里不能建造');
       return;
@@ -3016,6 +3153,13 @@ export class Game {
     background.scale.set(0.92, 0.1, 1);
     background.renderOrder = 20;
     bar.add(background);
+    if (type.elite || type.boss) {
+      const eliteBorder = new THREE.Mesh(barGeometry, barEliteBorderMaterial);
+      eliteBorder.scale.set(0.96, 0.13, 1);
+      eliteBorder.position.z = -0.002;
+      eliteBorder.renderOrder = 19;
+      bar.add(eliteBorder);
+    }
     const fillMaterial = new THREE.MeshBasicMaterial({
       color: 0x4ade80,
       transparent: true,
@@ -3051,6 +3195,7 @@ export class Game {
       healTimer: 1.2 + this.rng() * 1.2,
       summonTimer: 4 + this.rng() * 3,
       orbital,
+      stopped: false,
       reward: Math.round(type.reward * wave.rewardMul),
       status: createStatus(),
       resistances: createResistances(
@@ -3133,6 +3278,7 @@ export class Game {
       const attributeDebuff =
         packet.element && packet.element !== 'none'
           ? getLightResistanceDebuff(enemy, packet.element) +
+            getDarkResistanceDebuff(enemy, packet.element) +
             getSpreadResistanceDebuff(enemy, packet.element) +
             getSweepResistanceDebuff(enemy)
           : 0;
@@ -3732,8 +3878,10 @@ export class Game {
   updateBossSummon(enemy, dt) {
     enemy.summonTimer -= dt;
     if (enemy.summonTimer > 0) return;
-    enemy.summonTimer +=
-      (enemy.type.summonInterval / getStasisSkillFactor(enemy));
+    const summonInterval =
+      (enemy.stopped ? enemy.type.stoppedSummonInterval : enemy.type.summonInterval) ||
+      enemy.type.summonInterval;
+    enemy.summonTimer += summonInterval / getStasisSkillFactor(enemy);
     const count = enemy.type.summonCount || 1;
     for (let i = 0; i < count; i++) {
       const cell = this.findBossSummonCell(enemy);
@@ -3819,23 +3967,48 @@ export class Game {
         px = enemy.mesh.position.x;
         pz = enemy.mesh.position.z;
       } else {
-        const slow = getIceSlowFactor(enemy);
-        const speed = enemy.baseSpeed * slow * getStasisMovementFactor(enemy);
-
-        enemy.routeDist += speed * dt;
-        enemy.remaining = enemy.routeTotal - enemy.routeDist;
-        if (enemy.routeDist >= enemy.routeTotal) {
-          if (enemy.noLeak) this.retireEnemy(enemy);
-          else this.leakEnemy(enemy);
-          continue;
+        let shouldAdvance = true;
+        if (enemy.type.boss) {
+          const basePos = this.cellToWorld(this.map.goal.x, this.map.goal.y);
+          const distanceToBase = Math.hypot(
+            enemy.mesh.position.x - basePos.x,
+            enemy.mesh.position.z - basePos.z
+          );
+          const stopDistance = (enemy.type.stopDistance || 4) * TILE_SIZE;
+          if (enemy.stopped || distanceToBase <= stopDistance) {
+            if (!enemy.stopped) {
+              enemy.stopped = true;
+              enemy.summonTimer = Math.min(
+                enemy.summonTimer,
+                enemy.type.stoppedSummonInterval || enemy.type.summonInterval
+              );
+              this.castEffect(enemy.mesh.position, 0xa855f7, 2.4, 0.45);
+            }
+            enemy.remaining = distanceToBase;
+            px = enemy.mesh.position.x;
+            pz = enemy.mesh.position.z;
+            shouldAdvance = false;
+          }
         }
+        if (shouldAdvance) {
+          const slow = getIceSlowFactor(enemy);
+          const speed = enemy.baseSpeed * slow * getStasisMovementFactor(enemy);
 
-        this.sampleRoute(enemy, this.tmpPos, this.tmpDir);
-        px = this.tmpPos.x - this.tmpDir.z * enemy.offset;
-        pz = this.tmpPos.z + this.tmpDir.x * enemy.offset;
-        enemy.mesh.position.set(px, enemy.altitude, pz);
-        const yaw = Math.atan2(this.tmpDir.x, this.tmpDir.z);
-        enemy.mesh.rotation.y = dampAngle(enemy.mesh.rotation.y, yaw, dt * 9);
+          enemy.routeDist += speed * dt;
+          enemy.remaining = enemy.routeTotal - enemy.routeDist;
+          if (enemy.routeDist >= enemy.routeTotal) {
+            if (enemy.noLeak) this.retireEnemy(enemy);
+            else this.leakEnemy(enemy);
+            continue;
+          }
+
+          this.sampleRoute(enemy, this.tmpPos, this.tmpDir);
+          px = this.tmpPos.x - this.tmpDir.z * enemy.offset;
+          pz = this.tmpPos.z + this.tmpDir.x * enemy.offset;
+          enemy.mesh.position.set(px, enemy.altitude, pz);
+          const yaw = Math.atan2(this.tmpDir.x, this.tmpDir.z);
+          enemy.mesh.rotation.y = dampAngle(enemy.mesh.rotation.y, yaw, dt * 9);
+        }
       }
 
       const dominant = dominantElement(enemy);
@@ -4182,7 +4355,13 @@ export class Game {
     this.lastTime = now;
     dt = Math.min(dt, 0.1);
 
-    if (!this.helpOpen && !this.paused && (this.phase === 'build' || this.phase === 'combat')) {
+    if (
+      !this.helpOpen &&
+      !this.paused &&
+      !this.pauseMenuOpen &&
+      !this.factionChoiceOpen &&
+      (this.phase === 'build' || this.phase === 'combat')
+    ) {
       this.accumulator += dt * this.speed;
       let steps = 0;
       while (this.accumulator >= STEP && steps < 8) {

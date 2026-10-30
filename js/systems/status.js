@@ -18,6 +18,7 @@ export const SUPERCONDUCT_BASE_DAMAGE = 10;
 export const SUPERCONDUCT_DOT_MULTIPLIER = 1.5;
 export const LIGHT_DAMAGE_AMP_PER_LAYER = 0.15;
 export const LIGHT_RESIST_REDUCTION_PER_LAYER = 0.1;
+export const DARK_RESIST_REDUCTION_PER_LAYER = 0.05;
 export const SPREAD_RESIST_REDUCTION = 0.3;
 export const SPREAD_WIND_RESIST_REDUCTION = 0.2;
 export const SPREAD_RESIST_DURATION = 6;
@@ -174,6 +175,12 @@ export function getLightResistanceDebuff(enemy, element) {
   if (!enemy.status || !element || element === 'none') return 0;
   if (!enemy.status.attachments.light || enemy.status.attachments.light <= 0) return 0;
   return -(enemy.status.attachments[element] || 0) * LIGHT_RESIST_REDUCTION_PER_LAYER;
+}
+
+export function getDarkResistanceDebuff(enemy, element) {
+  if (!enemy.status || !element || element === 'none') return 0;
+  if (!enemy.status.attachments.dark || enemy.status.attachments.dark <= 0) return 0;
+  return -(enemy.status.attachments[element] || 0) * DARK_RESIST_REDUCTION_PER_LAYER;
 }
 
 export function applySpreadResistanceDebuff(enemy, element) {
