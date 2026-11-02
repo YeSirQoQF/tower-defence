@@ -22,9 +22,11 @@ import {
   resolveSupplyStats,
   resolveCannonStats,
   resolveMagicStats,
+  resolveLaserStats,
   resolveCoinStats,
   CANNON_UPGRADE,
   MAGIC_UPGRADE,
+  LASER_UPGRADE,
   COIN_UPGRADE,
   PULSE_UPGRADE,
   SUPPLY_UPGRADE,
@@ -32,6 +34,7 @@ import {
   supplyUpgradeCost,
   cannonUpgradeCost,
   magicUpgradeCost,
+  laserUpgradeCost,
   coinUpgradeCost
 } from './systems/towers.js';
 import {
@@ -39,8 +42,11 @@ import {
   createStatus,
   decayStatus,
   dominantElement,
+  applyLaserArmorBreak,
   applySpreadResistanceDebuff,
   applySweepResistanceDebuff,
+  getAnnihilationResistanceDebuff,
+  getLaserArmorBreakDebuff,
   getDarkReflectRatio,
   getDarkResistanceDebuff,
   getIceActionFactor,
@@ -75,6 +81,7 @@ const TOWER_ORDER = Object.freeze([
   'cannon',
   'supply',
   'magic',
+  'laser',
   'frost',
   'burn',
   'water',
@@ -463,6 +470,50 @@ function makeTowerModel(type) {
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.28;
     head.add(ring);
+  } else if (type.id === 'laser') {
+    const pedestal = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.4, 0.56, 0.4, 8),
+      darkMaterial
+    );
+    pedestal.position.y = 0.2;
+    pedestal.castShadow = true;
+    head.add(pedestal);
+    const column = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.16, 0.24, 1.05, 8),
+      bodyMaterial
+    );
+    column.position.y = 0.82;
+    column.castShadow = true;
+    head.add(column);
+    const lensMaterial = new THREE.MeshBasicMaterial({
+      color: 0xf0f9ff,
+      transparent: true,
+      opacity: 0.92
+    });
+    const lens = new THREE.Mesh(new THREE.OctahedronGeometry(0.3, 1), lensMaterial);
+    lens.position.y = 1.42;
+    lens.scale.y = 0.72;
+    head.add(lens);
+    for (const y of [0.6, 0.98]) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.47, 0.045, 6, 24),
+        new THREE.MeshBasicMaterial({
+          color: type.color,
+          transparent: true,
+          opacity: 0.75
+        })
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = y;
+      head.add(ring);
+    }
+    const emitter = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.09, 0.14, 0.72, 8),
+      bodyMaterial
+    );
+    emitter.rotation.x = Math.PI / 2;
+    emitter.position.set(0, 1.38, 0.46);
+    head.add(emitter);
   } else if (type.id === 'coin') {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.4, 0.36, 8), darkMaterial);
     body.position.y = 0.18;
@@ -774,7 +825,6 @@ export class Game {
     this.initHud();
     this.updateHud();
     this.updateCamera();
-    if (this.difficulty !== 'easy') this.openFactionChoice();
 
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
@@ -1504,9 +1554,6 @@ export class Game {
       pauseContinue: document.getElementById('pause-continue'),
       pauseNew: document.getElementById('pause-new'),
       pauseHome: document.getElementById('pause-home'),
-      factionModal: document.getElementById('faction-modal'),
-      factionLight: document.getElementById('faction-light'),
-      factionDark: document.getElementById('faction-dark'),
       retry: document.getElementById('btn-retry'),
       again: document.getElementById('btn-again')
     };
@@ -1524,6 +1571,7 @@ export class Game {
             : '无属性附着';
         const support = !!type.support;
         const magic = !!type.magicTower;
+        const laser = !!type.laserTower;
         const cursed = !!type.curseTower;
         const coin = !!type.coinTower;
         let rows;
@@ -1551,6 +1599,16 @@ export class Game {
               <span><i>末段无属性</i><b>耗血 ×${type.untypedBonusRatio || 0}</b></span>
               <span><i>伤害类型</i><b>${damageType}</b></span>
               <span><i>升级</i><b>暂未开放</b></span>`;
+        } else if (laser) {
+          rows = `
+              <span><i>射线伤害</i><b>${type.damage}</b></span>
+              <span><i>攻击频率</i><b>${type.fireRate.toFixed(2)}/s</b></span>
+              <span><i>初始射程</i><b>${type.range.toFixed(1)} 格</b></span>
+              <span><i>贯穿宽度</i><b>${type.beamWidth} 格</b></span>
+              <span><i>生命</i><b>${type.hp}</b></span>
+              <span><i>嵌入</i><b>元素塔</b></span>
+              <span><i>优先目标</i><b>首领 / 精英</b></span>
+              <span><i>升级</i><b>Lv.16</b></span>`;
         } else if (magic) {
           rows = `
               <span><i>每次伤害</i><b>${type.damage}</b></span>
@@ -1579,11 +1637,13 @@ export class Game {
           ? '可升级：范围 / 攻击 / 生命 / 攻速 / 暴击'
           : magic
             ? '可升级：反应易伤每级 +5% · 与诅咒塔共享20层 · 3 连发'
-            : cursed
-              ? '识别2格内属性塔 · 4段魔法范围伤害 · 末段追加无属性伤害 · 反应易伤30%（与魔法塔共享20层）'
-              : coin
-                ? '周期性生产金币 · 可升级'
-                : elementAttach;
+            : laser
+              ? '贯穿射线 · 可嵌入元素塔 · 优先首领/精英 · Lv.16'
+              : cursed
+                ? '识别2格内属性塔 · 4段魔法范围伤害 · 末段追加无属性伤害 · 反应易伤30%（与魔法塔共享20层）'
+                : coin
+                  ? '周期性生产金币 · 可升级'
+                  : elementAttach;
         return `
         <button class="tower-card" data-type="${type.id}">
           <span class="tower-key">${type.key}</span>
@@ -1620,9 +1680,6 @@ export class Game {
     this.dom.pauseHome.addEventListener('click', () => {
       location.href = this.homeUrl();
     });
-    this.dom.factionLight.addEventListener('click', () => this.chooseFaction('light'));
-    this.dom.factionDark.addEventListener('click', () => this.chooseFaction('dark'));
-
     document.querySelectorAll('[data-speed]').forEach((button) => {
       button.addEventListener('click', () => {
         this.speed = Number(button.dataset.speed);
@@ -1879,10 +1936,7 @@ export class Game {
     this.pauseMenuOpen = true;
     this.paused = true;
     this.dom.pauseSeed.textContent = this.seed;
-    this.dom.pauseMeta.textContent = [
-      `${this.modeConfig.label} · ${this.diff.label}`,
-      this.faction ? `流派 ${this.faction === 'light' ? '光' : '暗'}` : '全塔开放'
-    ].join('  ·  ');
+    this.dom.pauseMeta.textContent = `${this.modeConfig.label} · ${this.diff.label}`;
     this.dom.pauseMenu.classList.remove('hidden');
     this.dom.pause.classList.add('active');
     this.updateHud();
@@ -2196,6 +2250,11 @@ export class Game {
     if (event.button !== 0) return;
     const tower = this.towerAt(cell.x, cell.y);
     if (tower) {
+      const selectedType = TOWER_TYPES[this.selectedTowerType];
+      if (tower.type.laserTower && selectedType?.element && selectedType.element !== 'none') {
+        this.placeTower(cell.x, cell.y);
+        return;
+      }
       this.selectedTower = tower;
       this.selectedRing.position.set(tower.mesh.position.x, 0.2, tower.mesh.position.z);
       this.selectedRing.scale.setScalar(tower.stats.range * TILE_SIZE);
@@ -2228,7 +2287,7 @@ export class Game {
       event.preventDefault();
       return;
     }
-    if (['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='].includes(key)) {
+    if (['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '['].includes(key)) {
       const type = this.availableTowerIds()
         .map((typeId) => TOWER_TYPES[typeId])
         .find((tower) => tower.key === key);
@@ -2268,6 +2327,15 @@ export class Game {
       this.toast(`${type.name}本局最多建造1座`);
       return;
     }
+    const existingTower = this.towerAt(x, y);
+    if (
+      existingTower?.type.laserTower &&
+      type.element &&
+      type.element !== 'none'
+    ) {
+      this.mountLaserElement(existingTower, type);
+      return;
+    }
     if (!this.isBuildable(x, y)) {
       this.toast('这里不能建造');
       return;
@@ -2302,7 +2370,11 @@ export class Game {
       y,
       mesh: model,
       head: model.userData.head,
-      investment: type.cost
+      investment: type.cost,
+      mountedType: null,
+      mountedElement: null,
+      mountedInvestment: 0,
+      mountVisual: null
     };
     if (type.coinTower) tower.cooldown = tower.stats.incomeInterval;
     this.createTowerHpBar(tower);
@@ -2338,7 +2410,68 @@ export class Game {
     tower.barWidth = 0.84;
   }
 
+  mountLaserElement(laser, type) {
+    if (laser.mountedType) {
+      this.toast('镭射塔已经嵌入元素塔');
+      return;
+    }
+    if (this.gold < type.cost) {
+      this.toast('金币不足');
+      return;
+    }
+    this.gold -= type.cost;
+    laser.mountedType = type;
+    laser.mountedElement = type.element;
+    laser.mountedInvestment = type.cost;
+    this.updateLaserMountVisual(laser);
+    this.recomputeTowerAuras();
+    if (this.selectedTower === laser) this.updateTowerPanel();
+    this.updateHud();
+    this.toast(`镭射塔嵌入 ${type.name}`);
+  }
+
+  updateLaserMountVisual(laser) {
+    if (laser.mountVisual) {
+      laser.head.remove(laser.mountVisual);
+      this.disposeObject(laser.mountVisual);
+      laser.mountVisual = null;
+    }
+    if (!laser.mountedElement) return;
+    const color = ELEMENTS[laser.mountedElement]?.color || 0x94a3b8;
+    const crystal = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.18, 0),
+      new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 1.8,
+        roughness: 0.18,
+        metalness: 0.2,
+        transparent: true,
+        opacity: 0.95
+      })
+    );
+    crystal.position.set(0, 1.15, 0.12);
+    laser.mountVisual = crystal;
+    laser.head.add(crystal);
+  }
+
+  removeLaserMount(laser) {
+    if (!laser.mountedType) return false;
+    const refund = Math.round(laser.mountedInvestment * ECONOMY.sellRefund);
+    this.gold += refund;
+    laser.mountedType = null;
+    laser.mountedElement = null;
+    laser.mountedInvestment = 0;
+    this.updateLaserMountVisual(laser);
+    this.recomputeTowerAuras();
+    if (this.selectedTower === laser) this.updateTowerPanel();
+    this.toast(`已拆除元素塔 +${refund}`);
+    this.updateHud();
+    return true;
+  }
+
   sellTower(tower) {
+    if (tower.type.laserTower && this.removeLaserMount(tower)) return;
     const refund = Math.round(tower.investment * ECONOMY.sellRefund);
     this.gold += refund;
     this.scene.remove(tower.mesh);
@@ -2375,6 +2508,9 @@ export class Game {
     }
     if (tower.type.id === 'cannon') return resolveCannonStats(tower.type, tower.level);
     if (tower.type.id === 'magic') return resolveMagicStats(tower.type, tower.level);
+    if (tower.type.laserTower) {
+      return resolveLaserStats(tower.type, tower.level, tower.mountedElement);
+    }
     if (tower.type.id === 'coin') return resolveCoinStats(tower.type, tower.level);
     return baseTowerStats({ ...tower.type, level: tower.level });
   }
@@ -2420,8 +2556,12 @@ export class Game {
         stats.range += Math.min(rangeBonus, SUPPLY_UPGRADE.rangeBuffCap);
         stats.damage *= 1 + Math.min(attackBonus, SUPPLY_UPGRADE.attackBuffCap);
         stats.fireRate *= 1 + Math.min(hasteBonus, SUPPLY_UPGRADE.hasteBuffCap);
-        stats.critChance = Math.min(critChance, SUPPLY_UPGRADE.critChanceCap);
-        stats.critDamage = Math.min(critDamage, SUPPLY_UPGRADE.critDamageCap);
+        stats.critChance = critChance;
+        stats.critDamage = critDamage;
+        if (tower.type.magicTower) {
+          stats.critChance = 0;
+          stats.critDamage = 0;
+        }
       }
       tower.stats = stats;
       tower.maxHp = Math.max(
@@ -2509,6 +2649,7 @@ export class Game {
     const ratio = clamp(tower.hp / tower.maxHp, 0, 1);
     const support = tower.type.support;
     const gun = tower.type.id === 'gun';
+    const laser = tower.type.laserTower;
     const rows = [];
 
     if (support) {
@@ -2532,6 +2673,23 @@ export class Game {
       rows.push(`<span><i>末段耗血</i><b>${Math.round(tower.type.hpConsumeRatio * 100)}%</b></span>`);
       rows.push(`<span><i>耗血增伤</i><b>×${tower.type.damagePerHp}</b></span>`);
       rows.push(`<span><i>伤害类型</i><b>魔法</b></span>`);
+    } else if (laser) {
+      const elementLabel =
+        stats.element && stats.element !== 'none'
+          ? ELEMENTS[stats.element].label
+          : '无属性';
+      const converted = Math.min(0.5, Math.max(0, (stats.critChance || 0) - 1));
+      rows.push(`<span><i>射线伤害</i><b>${stats.damage.toFixed(1)}</b></span>`);
+      rows.push(`<span><i>攻击频率</i><b>${stats.fireRate.toFixed(2)}/s</b></span>`);
+      rows.push(`<span><i>射程</i><b>${stats.range.toFixed(1)} 格</b></span>`);
+      rows.push(`<span><i>当前属性</i><b>${elementLabel}</b></span>`);
+      rows.push(`<span><i>嵌入</i><b>${tower.mountedType ? tower.mountedType.name : '无'}</b></span>`);
+      rows.push(`<span><i>伤害类型</i><b>${stats.damageType === 'magic' ? '魔法' : '物理'}</b></span>`);
+      rows.push(`<span><i>暴击</i><b>${Math.round(Math.min(1, stats.critChance || 0) * 100)}% / ${Math.round((stats.critDamage || 0) + converted) * 100}%</b></span>`);
+      rows.push(`<span><i>暴击破甲</i><b>物抗30% / 魔抗20%</b></span>`);
+      if (stats.element && stats.element !== 'none') {
+        rows.push(`<span><i>属性破甲</i><b>对应抗性20%</b></span>`);
+      }
     } else if (tower.type.magicTower) {
       rows.push(`<span><i>每段伤害</i><b>${stats.damage.toFixed(1)}</b></span>`);
       rows.push(`<span><i>射速</i><b>${stats.fireRate.toFixed(2)}/s</b></span>`);
@@ -2546,31 +2704,37 @@ export class Game {
       rows.push(`<span><i>DPS</i><b>${(stats.damage * stats.fireRate).toFixed(1)}</b></span>`);
       if (gun) {
         rows.push(`<span><i>超频层数</i><b>${tower.overclock}</b></span>`);
-        rows.push(`<span><i>穿透数</i><b>${tower.pierce}</b></span>`);
       }
       if (stats.splash) {
         rows.push(`<span><i>爆炸半径</i><b>${stats.splash.toFixed(2)} 格</b></span>`);
       }
     }
-    if (!support && !tower.type.coinTower && stats.critChance > 0) {
+    if (!support && !laser && !tower.type.coinTower && stats.critChance > 0) {
       rows.push(`<span><i>暴击</i><b>${Math.round(stats.critChance * 100)}% / ${Math.round(stats.critDamage * 100)}%</b></span>`);
     }
 
     let upgradeBlock = '<div class="tp-note">该塔暂未开放升级</div>';
-    if (gun) {
+    if (laser) {
+      const cost = laserUpgradeCost(tower);
+      const disabled = cost === null || this.gold < cost;
+      upgradeBlock = `
+        <div class="tp-section-title">升级</div>
+        <div class="tp-upgrades">
+          <button class="tp-upgrade" data-action="upgrade" ${disabled ? 'disabled' : ''}>
+            <strong>强化射线 · Lv.${tower.level}</strong>
+            <small>伤害与射程提高</small>
+            <span class="tp-cost">${cost === null ? '已满级' : `${cost} 金`}</span>
+          </button>
+        </div>`;
+    } else if (gun) {
       const cost = pulseUpgradeCost(tower);
       const disabled = cost === null || this.gold < cost;
       upgradeBlock = `
-        <div class="tp-section-title">选择升级方向</div>
+        <div class="tp-section-title">升级</div>
         <div class="tp-upgrades">
           <button class="tp-upgrade" data-action="overclock" ${disabled ? 'disabled' : ''}>
-            <strong>超频 · ${tower.overclock}</strong>
+            <strong>超频 · Lv.${tower.level}</strong>
             <small>射击频率 +5%</small>
-            <span class="tp-cost">${cost === null ? '已满级' : `${cost} 金`}</span>
-          </button>
-          <button class="tp-upgrade" data-action="pierce" ${disabled ? 'disabled' : ''}>
-            <strong>穿透 · ${tower.pierce}</strong>
-            <small>额外穿透 1 个敌人</small>
             <span class="tp-cost">${cost === null ? '已满级' : `${cost} 金`}</span>
           </button>
         </div>`;
@@ -2654,7 +2818,10 @@ export class Game {
         </div>`;
     }
 
-    const refund = Math.round(tower.investment * ECONOMY.sellRefund);
+    const sellInvestment =
+      laser && tower.mountedType ? tower.mountedInvestment : tower.investment;
+    const refund = Math.round(sellInvestment * ECONOMY.sellRefund);
+    const sellLabel = laser && tower.mountedType ? '拆除元素' : '出售';
     const html = `
       <div class="tp-head">
         <span class="tp-title">${tower.type.name}</span>
@@ -2666,8 +2833,8 @@ export class Game {
       <div class="tp-stats">${rows.join('')}</div>
       ${upgradeBlock}
       <div class="tp-actions">
-        <span class="tp-note">出售返还 ${refund} 金</span>
-        <button class="tp-sell ghost" data-action="sell">出售</button>
+        <span class="tp-note">${laser && tower.mountedType ? '拆除元素返还' : '出售返还'} ${refund} 金</span>
+        <button class="tp-sell ghost" data-action="sell">${sellLabel}</button>
       </div>`;
     if (this.towerPanelTower === tower && this.towerPanelHtml === html) return;
     this.towerPanelTower = tower;
@@ -2682,7 +2849,10 @@ export class Game {
 
     if (tower.type.id === 'gun') {
       cost = pulseUpgradeCost(tower);
-      valid = action === 'overclock' || action === 'pierce';
+      valid = action === 'overclock';
+    } else if (tower.type.laserTower) {
+      cost = laserUpgradeCost(tower);
+      valid = action === 'upgrade';
     } else if (tower.type.support) {
       cost = supplyUpgradeCost(tower);
       valid = ['range', 'attack', 'vitality', 'haste', 'crit'].includes(action);
@@ -2711,7 +2881,6 @@ export class Game {
     tower.investment += cost;
     tower.level++;
     if (action === 'overclock') tower.overclock++;
-    else if (action === 'pierce') tower.pierce++;
     else if (action === 'range') tower.rangeStacks++;
     else if (action === 'attack') tower.attackStacks++;
     else if (action === 'vitality') tower.vitalityStacks++;
@@ -3195,7 +3364,9 @@ export class Game {
       healTimer: 1.2 + this.rng() * 1.2,
       summonTimer: 4 + this.rng() * 3,
       orbital,
-      stopped: false,
+      bossWanderTarget: null,
+      teleportCooldown: type.boss ? (type.teleportCooldown || 8) : 0,
+      teleportUrge: 0,
       reward: Math.round(type.reward * wave.rewardMul),
       status: createStatus(),
       resistances: createResistances(
@@ -3227,6 +3398,7 @@ export class Game {
     enemy.mesh.scale.setScalar(0.25);
     this.scene.add(enemy.mesh);
     this.enemies.push(enemy);
+    if (type.boss) this.chooseBossWanderTarget(enemy);
   }
 
   sampleRoute(enemy, outPos, outDir) {
@@ -3256,6 +3428,79 @@ export class Game {
     return best;
   }
 
+  findLaserTarget(tower) {
+    const rangeSq = (tower.stats.range * TILE_SIZE) ** 2;
+    let boss = null;
+    let elite = null;
+    let normal = null;
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      const dx = enemy.mesh.position.x - tower.mesh.position.x;
+      const dz = enemy.mesh.position.z - tower.mesh.position.z;
+      if (dx * dx + dz * dz > rangeSq) continue;
+      if (enemy.type.boss) {
+        if (!boss || enemy.remaining < boss.remaining) boss = enemy;
+      } else if (enemy.type.elite) {
+        if (!elite || enemy.remaining < elite.remaining) elite = enemy;
+      } else if (!normal || enemy.remaining < normal.remaining) {
+        normal = enemy;
+      }
+    }
+    return boss || elite || normal;
+  }
+
+  fireLaser(tower, target) {
+    const origin = tower.mesh.position.clone();
+    const range = tower.stats.range * TILE_SIZE;
+    const dx = target.mesh.position.x - origin.x;
+    const dz = target.mesh.position.z - origin.z;
+    const length = Math.hypot(dx, dz) || 1;
+    const dirX = dx / length;
+    const dirZ = dz / length;
+    const endpoint = new THREE.Vector3(
+      origin.x + dirX * range,
+      origin.y,
+      origin.z + dirZ * range
+    );
+    const element = tower.stats.element || 'none';
+    const rawCritChance = tower.stats.critChance || 0;
+    const critChance = Math.min(1, rawCritChance);
+    const convertedCritDamage = Math.min(
+      0.5,
+      Math.max(0, rawCritChance - 1)
+    );
+    const critDamage = (tower.stats.critDamage || 0) + convertedCritDamage;
+    const crit = this.rng() < critChance;
+    const hitTargets = [];
+    const halfWidth = ((tower.type.beamWidth || 0.55) * TILE_SIZE) / 2;
+
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      const ex = enemy.mesh.position.x - origin.x;
+      const ez = enemy.mesh.position.z - origin.z;
+      const along = ex * dirX + ez * dirZ;
+      if (along < 0 || along > range) continue;
+      const perpendicular = Math.abs(ex * dirZ - ez * dirX);
+      if (perpendicular > halfWidth) continue;
+      hitTargets.push(enemy);
+      this.damageEnemy(enemy, tower.stats.damage, {
+        damageType: tower.stats.damageType,
+        element,
+        attach: element === 'none' ? 0 : 2,
+        source: 'laser',
+        critChance: crit ? 1 : 0,
+        critDamage
+      });
+      if (crit && !enemy.dead) applyLaserArmorBreak(enemy, element);
+    }
+
+    const color = element === 'none' ? 0xe0f2fe : ELEMENTS[element].color;
+    this.spawnTracer(origin, endpoint, color, 0.14);
+    if (hitTargets.length > 0) {
+      this.castEffect(target.mesh.position, color, 1.4, 0.3);
+    }
+  }
+
   damageEnemy(enemy, amount, packet = {}) {
     if (enemy.dead) return;
     if (
@@ -3280,17 +3525,34 @@ export class Game {
           ? getLightResistanceDebuff(enemy, packet.element) +
             getDarkResistanceDebuff(enemy, packet.element) +
             getSpreadResistanceDebuff(enemy, packet.element) +
-            getSweepResistanceDebuff(enemy)
+            getSweepResistanceDebuff(enemy) +
+            getAnnihilationResistanceDebuff(enemy, packet.element) +
+            getLaserArmorBreakDebuff(enemy, packet.element)
           : 0;
-      finalAmount *= getResistanceMultiplier(enemy, damageType, packet.element, attributeDebuff);
+      const damageDebuff =
+        getAnnihilationResistanceDebuff(enemy, damageType) +
+        getLaserArmorBreakDebuff(enemy, damageType);
+      finalAmount *= getResistanceMultiplier(
+        enemy,
+        damageType,
+        packet.element,
+        attributeDebuff,
+        damageDebuff
+      );
       finalAmount *= getLightDamageMultiplier(enemy);
       if (packet.reaction) finalAmount *= this.getReactionVulnerabilityMultiplier(enemy);
       if (crit) this.castEffect(enemy.mesh.position, 0xfef08a, 0.7, 0.22);
     }
+    if (enemy.type.boss && finalAmount > 0) {
+      enemy.teleportUrge = Math.min(
+        2,
+        enemy.teleportUrge + finalAmount / Math.max(1, enemy.maxHp)
+      );
+    }
     enemy.hp -= finalAmount;
     enemy.flash = 0.1;
     if (packet.element && packet.element !== 'none' && packet.attach !== 0) {
-      addAttachment(enemy, packet.element, 1);
+      addAttachment(enemy, packet.element, packet.attach || 1);
       this.reactionQueue.add(enemy);
     }
     if (enemy.hp <= 0) {
@@ -3481,6 +3743,7 @@ export class Game {
               reaction: true
             });
           }
+          enemy.status.annihilationResistApplied = true;
           this.castEffect(enemy.mesh.position, 0xf5d0fe, event.radius * 1.2, 0.55);
           continue;
         }
@@ -3791,6 +4054,22 @@ export class Game {
       }
 
       tower.cooldown -= dt;
+      if (tower.type.laserTower) {
+        const target = this.findLaserTarget(tower);
+        if (target) {
+          const angle = Math.atan2(
+            target.mesh.position.x - tower.mesh.position.x,
+            target.mesh.position.z - tower.mesh.position.z
+          );
+          tower.head.rotation.y = dampAngle(tower.head.rotation.y, angle, dt * 10);
+          if (tower.cooldown <= 0) {
+            this.fireLaser(tower, target);
+            tower.cooldown = 1 / tower.stats.fireRate;
+          }
+        }
+        continue;
+      }
+
       const target = this.findTarget(tower);
       if (target) {
         const angle = Math.atan2(
@@ -3875,12 +4154,112 @@ export class Game {
     return choices[Math.floor(this.rng() * choices.length)];
   }
 
+  chooseBossWanderTarget(enemy) {
+    const goal = this.map.goal;
+    const allowed = this.pathGraph.cells.filter(
+      (cell) => Math.hypot(cell.x - goal.x, cell.y - goal.y) >= 9
+    );
+    let pool = allowed;
+    if (this.map.strongholds && this.map.strongholds.length > 0) {
+      const anchor =
+        this.map.strongholds[Math.floor(this.rng() * this.map.strongholds.length)];
+      const nearAnchor = allowed.filter((cell) => {
+        const distance = Math.hypot(cell.x - anchor.x, cell.y - anchor.y);
+        return distance >= 7 && distance <= 22;
+      });
+      if (nearAnchor.length > 0) pool = nearAnchor;
+    }
+    if (pool.length === 0) return;
+    const cell = pool[Math.floor(this.rng() * pool.length)];
+    enemy.bossWanderTarget = this.cellToWorld(cell.x, cell.y);
+  }
+
+  chooseBossTeleportCell(enemy) {
+    const current = this.cellFromWorld(enemy.mesh.position);
+    const goal = this.map.goal;
+    const minDistance = enemy.type.teleportMinDistance || 3;
+    const maxDistance = enemy.type.teleportMaxDistance || 12;
+    const allowed = this.pathGraph.cells.filter(
+      (cell) => Math.hypot(cell.x - goal.x, cell.y - goal.y) >= 9
+    );
+    if (!current) {
+      return allowed.length > 0
+        ? allowed[Math.floor(this.rng() * allowed.length)]
+        : null;
+    }
+    const nearby = allowed.filter((cell) => {
+      const distance = Math.hypot(cell.x - current.x, cell.y - current.y);
+      return distance >= minDistance && distance <= maxDistance;
+    });
+    const pool = nearby.length > 0 ? nearby : allowed;
+    return pool.length > 0 ? pool[Math.floor(this.rng() * pool.length)] : null;
+  }
+
+  teleportBoss(enemy) {
+    const cell = this.chooseBossTeleportCell(enemy);
+    if (!cell) return;
+    const from = enemy.mesh.position.clone();
+    const to = this.cellToWorld(cell.x, cell.y);
+    enemy.mesh.position.set(to.x, enemy.altitude, to.z);
+    enemy.bossWanderTarget = null;
+    this.chooseBossWanderTarget(enemy);
+    enemy.teleportCooldown =
+      (enemy.type.teleportCooldown || 8) / getStasisSkillFactor(enemy);
+    enemy.teleportUrge = 0;
+    this.castEffect(from, 0xa855f7, 2.4, 0.45);
+    this.castEffect(to, 0x67e8f9, 2.4, 0.45);
+  }
+
+  updateBossWander(enemy, dt) {
+    enemy.teleportCooldown = Math.max(0, enemy.teleportCooldown - dt);
+    const decay = enemy.type.teleportPressureDecay || 4;
+    enemy.teleportUrge *= Math.exp(-dt / decay);
+
+    if (enemy.teleportCooldown <= 0) {
+      const chance = Math.min(
+        0.5,
+        (enemy.type.teleportBaseChance || 0.02) +
+          enemy.teleportUrge * (enemy.type.teleportDamageScale || 3)
+      );
+      if (this.rng() < chance * dt) {
+        this.teleportBoss(enemy);
+      }
+    }
+
+    if (!enemy.bossWanderTarget) this.chooseBossWanderTarget(enemy);
+    if (!enemy.bossWanderTarget) return;
+
+    const dx = enemy.bossWanderTarget.x - enemy.mesh.position.x;
+    const dz = enemy.bossWanderTarget.z - enemy.mesh.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance <= 0.15) {
+      enemy.bossWanderTarget = null;
+      return;
+    }
+
+    const slow = getIceSlowFactor(enemy) * getStasisMovementFactor(enemy);
+    const step = enemy.baseSpeed * slow * dt;
+    if (step >= distance) {
+      enemy.mesh.position.x = enemy.bossWanderTarget.x;
+      enemy.mesh.position.z = enemy.bossWanderTarget.z;
+      enemy.bossWanderTarget = null;
+    } else {
+      enemy.mesh.position.x += (dx / distance) * step;
+      enemy.mesh.position.z += (dz / distance) * step;
+    }
+    const basePos = this.cellToWorld(this.map.goal.x, this.map.goal.y);
+    enemy.remaining = Math.hypot(
+      enemy.mesh.position.x - basePos.x,
+      enemy.mesh.position.z - basePos.z
+    );
+    const yaw = Math.atan2(dx, dz);
+    enemy.mesh.rotation.y = dampAngle(enemy.mesh.rotation.y, yaw, dt * 8);
+  }
+
   updateBossSummon(enemy, dt) {
     enemy.summonTimer -= dt;
     if (enemy.summonTimer > 0) return;
-    const summonInterval =
-      (enemy.stopped ? enemy.type.stoppedSummonInterval : enemy.type.summonInterval) ||
-      enemy.type.summonInterval;
+    const summonInterval = enemy.type.summonInterval || 14;
     enemy.summonTimer += summonInterval / getStasisSkillFactor(enemy);
     const count = enemy.type.summonCount || 1;
     for (let i = 0; i < count; i++) {
@@ -3962,53 +4341,32 @@ export class Game {
 
       let px;
       let pz;
-      if (enemy.type.orbitalFlyer) {
+      if (enemy.type.boss) {
+        this.updateBossWander(enemy, dt);
+        px = enemy.mesh.position.x;
+        pz = enemy.mesh.position.z;
+      } else if (enemy.type.orbitalFlyer) {
         this.updateOrbitalFlyer(enemy, dt);
         px = enemy.mesh.position.x;
         pz = enemy.mesh.position.z;
       } else {
-        let shouldAdvance = true;
-        if (enemy.type.boss) {
-          const basePos = this.cellToWorld(this.map.goal.x, this.map.goal.y);
-          const distanceToBase = Math.hypot(
-            enemy.mesh.position.x - basePos.x,
-            enemy.mesh.position.z - basePos.z
-          );
-          const stopDistance = (enemy.type.stopDistance || 4) * TILE_SIZE;
-          if (enemy.stopped || distanceToBase <= stopDistance) {
-            if (!enemy.stopped) {
-              enemy.stopped = true;
-              enemy.summonTimer = Math.min(
-                enemy.summonTimer,
-                enemy.type.stoppedSummonInterval || enemy.type.summonInterval
-              );
-              this.castEffect(enemy.mesh.position, 0xa855f7, 2.4, 0.45);
-            }
-            enemy.remaining = distanceToBase;
-            px = enemy.mesh.position.x;
-            pz = enemy.mesh.position.z;
-            shouldAdvance = false;
-          }
-        }
-        if (shouldAdvance) {
-          const slow = getIceSlowFactor(enemy);
-          const speed = enemy.baseSpeed * slow * getStasisMovementFactor(enemy);
+        const slow = getIceSlowFactor(enemy);
+        const speed = enemy.baseSpeed * slow * getStasisMovementFactor(enemy);
 
-          enemy.routeDist += speed * dt;
-          enemy.remaining = enemy.routeTotal - enemy.routeDist;
-          if (enemy.routeDist >= enemy.routeTotal) {
-            if (enemy.noLeak) this.retireEnemy(enemy);
-            else this.leakEnemy(enemy);
-            continue;
-          }
-
-          this.sampleRoute(enemy, this.tmpPos, this.tmpDir);
-          px = this.tmpPos.x - this.tmpDir.z * enemy.offset;
-          pz = this.tmpPos.z + this.tmpDir.x * enemy.offset;
-          enemy.mesh.position.set(px, enemy.altitude, pz);
-          const yaw = Math.atan2(this.tmpDir.x, this.tmpDir.z);
-          enemy.mesh.rotation.y = dampAngle(enemy.mesh.rotation.y, yaw, dt * 9);
+        enemy.routeDist += speed * dt;
+        enemy.remaining = enemy.routeTotal - enemy.routeDist;
+        if (enemy.routeDist >= enemy.routeTotal) {
+          if (enemy.noLeak) this.retireEnemy(enemy);
+          else this.leakEnemy(enemy);
+          continue;
         }
+
+        this.sampleRoute(enemy, this.tmpPos, this.tmpDir);
+        px = this.tmpPos.x - this.tmpDir.z * enemy.offset;
+        pz = this.tmpPos.z + this.tmpDir.x * enemy.offset;
+        enemy.mesh.position.set(px, enemy.altitude, pz);
+        const yaw = Math.atan2(this.tmpDir.x, this.tmpDir.z);
+        enemy.mesh.rotation.y = dampAngle(enemy.mesh.rotation.y, yaw, dt * 9);
       }
 
       const dominant = dominantElement(enemy);

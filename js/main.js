@@ -103,8 +103,8 @@ function initHome() {
     const selectedDifficulty = difficultySelect.value;
     hint.textContent =
       selectedDifficulty === 'easy'
-        ? '轻松：全塔开放，无流派限制。'
-        : '标准 / 高压：开局选择光/暗流派，未选属性塔最多 1 座。';
+        ? '轻松：全塔开放，诅咒塔可用。'
+        : '标准 / 高压：诅咒塔不可用。';
   }
 
   function setupHomeHelp() {

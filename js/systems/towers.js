@@ -1,20 +1,15 @@
 export const PULSE_UPGRADE = Object.freeze({
   costs: [
     12, 14, 17, 20, 23, 27, 32, 38, 45, 53,
-    63, 74, 87, 103, 122, 144, 170, 200, 236, 279,
-    329, 388, 458, 540, 637, 752, 887, 1047, 1236, 1458, 1720
+    63, 74, 87, 103, 122
   ],
-  maxLevel: 32,
+  maxLevel: 16,
   damagePerLevel: 1.04,
   rangePerLevel: 0.2,
   overclockRate: 1.05,
   overclock: {
     name: '超频',
     desc: '射击频率 +5%'
-  },
-  pierce: {
-    name: '穿透',
-    desc: '每次攻击额外穿透 1 个敌人'
   }
 });
 
@@ -38,8 +33,6 @@ export const SUPPLY_UPGRADE = Object.freeze({
   attackBuffCap: 3,
   maxHpBuffCap: 3,
   hasteBuffCap: 1,
-  critChanceCap: 1,
-  critDamageCap: 1.5,
   maxCritTier: 3,
   range: {
     name: '增幅',
@@ -76,6 +69,16 @@ export const MAGIC_UPGRADE = Object.freeze({
   maxLevel: 10,
   reactionAmpPerLevel: 0.05,
   maxReactionLevels: 20
+});
+
+export const LASER_UPGRADE = Object.freeze({
+  costs: [
+    30, 37, 46, 57, 71, 88, 109, 135, 168, 208,
+    258, 320, 396, 492, 610
+  ],
+  maxLevel: 16,
+  damagePerLevel: 1.06,
+  rangePerLevel: 0.2
 });
 
 export const COIN_UPGRADE = Object.freeze({
@@ -147,6 +150,19 @@ export function resolveMagicStats(type, level = 1) {
   };
 }
 
+export function resolveLaserStats(type, level = 1, mountedElement = null) {
+  const upgrades = Math.max(0, level - 1);
+  const element = mountedElement || 'none';
+  return {
+    ...type,
+    level,
+    element,
+    damageType: element === 'light' || element === 'dark' ? 'magic' : 'physical',
+    damage: type.damage * Math.pow(LASER_UPGRADE.damagePerLevel, upgrades),
+    range: type.range + LASER_UPGRADE.rangePerLevel * upgrades
+  };
+}
+
 export function resolveCoinStats(type, level = 1) {
   return {
     ...type,
@@ -173,6 +189,11 @@ export function cannonUpgradeCost(tower) {
 export function magicUpgradeCost(tower) {
   if (tower.level >= MAGIC_UPGRADE.maxLevel) return null;
   return MAGIC_UPGRADE.costs[tower.level - 1];
+}
+
+export function laserUpgradeCost(tower) {
+  if (tower.level >= LASER_UPGRADE.maxLevel) return null;
+  return LASER_UPGRADE.costs[tower.level - 1];
 }
 
 export function coinUpgradeCost(tower) {

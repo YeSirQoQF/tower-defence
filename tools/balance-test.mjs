@@ -30,6 +30,7 @@ import {
   SUPPLY_UPGRADE,
   CANNON_UPGRADE,
   MAGIC_UPGRADE,
+  LASER_UPGRADE,
   COIN_UPGRADE
 } from '../js/systems/towers.js';
 
@@ -375,20 +376,21 @@ addAttachment(lightResistEnemy, 'light', 1);
 addAttachment(lightResistEnemy, 'fire', 2);
 checkReaction(
   'light-resist-debuff',
-  Math.abs(getLightResistanceDebuff(lightResistEnemy, 'fire') + 0.2) < 1e-9
+  Math.abs(getLightResistanceDebuff(lightResistEnemy, 'fire') + 0.3) < 1e-9
 );
 const spreadEnemy = makeReactionEnemy();
 applySpreadResistanceDebuff(spreadEnemy, 'fire');
 checkReaction(
   'spread-resist',
-  getSpreadResistanceDebuff(spreadEnemy, 'fire') === -0.3 &&
-    getSpreadResistanceDebuff(spreadEnemy, 'wind') === -0.2
+  getSpreadResistanceDebuff(spreadEnemy, 'fire') === -0.4 &&
+    getSpreadResistanceDebuff(spreadEnemy, 'wind') === -0.4
 );
 applySpreadResistanceDebuff(spreadEnemy, 'ice');
 checkReaction(
-  'spread-refresh',
-  getSpreadResistanceDebuff(spreadEnemy, 'fire') === 0 &&
-    getSpreadResistanceDebuff(spreadEnemy, 'ice') === -0.3
+  'spread-coexist',
+  getSpreadResistanceDebuff(spreadEnemy, 'fire') === -0.4 &&
+    getSpreadResistanceDebuff(spreadEnemy, 'ice') === -0.4 &&
+    getSpreadResistanceDebuff(spreadEnemy, 'wind') === -0.4
 );
 const sweepEnemy = makeReactionEnemy();
 checkReaction(
@@ -485,6 +487,7 @@ const upgradeChecks = [
   ['supply', SUPPLY_UPGRADE.costs.length, SUPPLY_UPGRADE.maxLevel],
   ['cannon', CANNON_UPGRADE.costs.length, CANNON_UPGRADE.maxLevel],
   ['magic', MAGIC_UPGRADE.costs.length, MAGIC_UPGRADE.maxLevel],
+  ['laser', LASER_UPGRADE.costs.length, LASER_UPGRADE.maxLevel],
   ['coin', COIN_UPGRADE.costs.length, COIN_UPGRADE.maxLevel]
 ];
 for (const [name, costCount, maxLevel] of upgradeChecks) {
@@ -517,9 +520,14 @@ if (
   failed = true;
   console.error('  UPGRADE FAIL coin level/cost');
 }
-if (SUPPLY_UPGRADE.critChanceCap !== 1 || SUPPLY_UPGRADE.maxCritTier !== 3) {
+if (SUPPLY_UPGRADE.maxCritTier !== 3) {
   failed = true;
-  console.error('  UPGRADE FAIL crit cap/tier');
+  console.error('  UPGRADE FAIL crit tier');
+}
+const laserCustomTotal = TOWER_TYPES.laser.cost + LASER_UPGRADE.costs.reduce((s, c) => s + c, 0);
+if (laserCustomTotal < 3300 || laserCustomTotal > 3800) {
+  failed = true;
+  console.error(`  BUDGET FAIL laser ${laserCustomTotal}`);
 }
 if (PULSE_UPGRADE.rangePerLevel < 0.2 || CANNON_UPGRADE.rangePerLevel < 0.12) {
   failed = true;

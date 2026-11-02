@@ -17,10 +17,10 @@ export const OVERLOAD_DAMAGE_PER_LAYER = 6;
 export const SUPERCONDUCT_BASE_DAMAGE = 10;
 export const SUPERCONDUCT_DOT_MULTIPLIER = 1.5;
 export const LIGHT_DAMAGE_AMP_PER_LAYER = 0.15;
-export const LIGHT_RESIST_REDUCTION_PER_LAYER = 0.1;
+export const LIGHT_RESIST_REDUCTION_PER_LAYER = 0.15;
 export const DARK_RESIST_REDUCTION_PER_LAYER = 0.05;
-export const SPREAD_RESIST_REDUCTION = 0.3;
-export const SPREAD_WIND_RESIST_REDUCTION = 0.2;
+export const SPREAD_RESIST_REDUCTION = 0.4;
+export const SPREAD_WIND_RESIST_REDUCTION = 0.4;
 export const SPREAD_RESIST_DURATION = 6;
 export const SWEEP_RESIST_REDUCTION = 0.2;
 export const DARK_REFLECT_PER_LAYER = 0.3;
@@ -74,8 +74,11 @@ export function createStatus() {
     scorch: null,
     drunken: false,
     stasis: false,
-    spreadResistance: null,
+    spreadResistance: {},
     sweepResistanceApplied: false,
+    annihilationLocked: false,
+    annihilationResistApplied: false,
+    laserArmorBreak: null,
     reactionCooldown: 0,
     buffs: {}
   };
@@ -144,8 +147,17 @@ export function decayStatus(enemy, dt) {
     if (enemy.status.residuals) enemy.status.residuals[element] = raw - rounded;
   }
   if (enemy.status.spreadResistance) {
-    enemy.status.spreadResistance.remaining -= dt;
-    if (enemy.status.spreadResistance.remaining <= 0) enemy.status.spreadResistance = null;
+    for (const element of Object.keys(enemy.status.spreadResistance)) {
+      const debuff = enemy.status.spreadResistance[element];
+      debuff.remaining -= dt;
+      if (debuff.remaining <= 0) delete enemy.status.spreadResistance[element];
+    }
+  }
+  if (enemy.status.laserArmorBreak) {
+    enemy.status.laserArmorBreak.remaining -= dt;
+    if (enemy.status.laserArmorBreak.remaining <= 0) {
+      enemy.status.laserArmorBreak = null;
+    }
   }
   if (enemy.status.reactionCooldown > 0) {
     enemy.status.reactionCooldown = Math.max(0, enemy.status.reactionCooldown - dt);
@@ -185,19 +197,45 @@ export function getDarkResistanceDebuff(enemy, element) {
 
 export function applySpreadResistanceDebuff(enemy, element) {
   if (!enemy.status || !element || element === 'none') return;
-  enemy.status.spreadResistance = {
-    element,
+  enemy.status.spreadResistance[element] = {
     remaining: SPREAD_RESIST_DURATION
   };
 }
 
 export function getSpreadResistanceDebuff(enemy, element) {
   if (!enemy.status || !enemy.status.spreadResistance || !element || element === 'none') return 0;
-  const debuff = enemy.status.spreadResistance;
   let value = 0;
-  if (element === debuff.element) value -= SPREAD_RESIST_REDUCTION;
-  if (element === 'wind') value -= SPREAD_WIND_RESIST_REDUCTION;
+  if (enemy.status.spreadResistance[element]) value -= SPREAD_RESIST_REDUCTION;
+  if (element === 'wind') {
+    const hasSpread = Object.keys(enemy.status.spreadResistance).length > 0;
+    if (hasSpread) value -= SPREAD_WIND_RESIST_REDUCTION;
+  }
   return value;
+}
+
+export function applyLaserArmorBreak(enemy, element) {
+  if (!enemy.status) return;
+  enemy.status.laserArmorBreak = {
+    element: element && element !== 'none' ? element : null,
+    remaining: 6
+  };
+}
+
+export function getLaserArmorBreakDebuff(enemy, key) {
+  if (!enemy.status || !enemy.status.laserArmorBreak) return 0;
+  if (key === 'physical') return -0.3;
+  if (key === 'magic') return -0.2;
+  if (key === enemy.status.laserArmorBreak.element) return -0.2;
+  return 0;
+}
+
+export function getAnnihilationResistanceDebuff(enemy, key) {
+  if (!enemy.status || !enemy.status.annihilationResistApplied) return 0;
+  if (key === 'physical' || key === 'magic') return -0.05;
+  if (['fire', 'ice', 'lightning', 'wind', 'water', 'light', 'dark'].includes(key)) {
+    return -0.1;
+  }
+  return 0;
 }
 
 export function applySweepResistanceDebuff(enemy) {
@@ -352,13 +390,20 @@ export function resolveReactions(enemy, spreadCallback) {
   if (!enemy.status || enemy.status.reactionCooldown > 0) return [];
   const attachments = enemy.status.attachments;
   const events = [];
+  let annihilationTriggered = false;
 
   for (let i = 0; i < REACTION_CHAIN_LIMIT; i++) {
-    if (attachments.light >= 1 && attachments.dark >= 1) {
+    if (
+      attachments.light >= 1 &&
+      attachments.dark >= 1 &&
+      !enemy.status.annihilationLocked
+    ) {
       const light = attachments.light;
       const dark = attachments.dark;
       attachments.light = 0;
       attachments.dark = 0;
+      enemy.status.annihilationLocked = true;
+      annihilationTriggered = true;
       events.push({
         type: 'annihilation',
         damage: Math.round(
@@ -508,6 +553,14 @@ export function resolveReactions(enemy, spreadCallback) {
     break;
   }
 
+  if (annihilationTriggered) {
+    attachments.light = MAX_ATTACHMENT;
+    attachments.dark = MAX_ATTACHMENT;
+    if (enemy.status.residuals) {
+      enemy.status.residuals.light = 0;
+      enemy.status.residuals.dark = 0;
+    }
+  }
   if (events.length > 0) {
     enemy.status.reactionCooldown = REACTION_COOLDOWN;
   }

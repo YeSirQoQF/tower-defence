@@ -62,9 +62,15 @@ export function createResistances(
   };
 }
 
-export function getResistanceMultiplier(enemy, damageType, element, attributeDebuff = 0) {
+export function getResistanceMultiplier(
+  enemy,
+  damageType,
+  element,
+  attributeDebuff = 0,
+  damageDebuff = 0
+) {
   if (!enemy.resistances) return 1;
-  const damageResistance = enemy.resistances[damageType] || 0;
+  const damageResistance = (enemy.resistances[damageType] || 0) + damageDebuff;
   const attributeResistance =
     element && element !== 'none'
       ? (enemy.resistances[element] || 0) + attributeDebuff

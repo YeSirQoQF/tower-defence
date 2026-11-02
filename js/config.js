@@ -241,10 +241,27 @@ export const TOWER_TYPES = Object.freeze({
     accent: 0x7c3aed,
     desc: '抽取范围内属性；无属性时三连无属性魔法'
   },
+  laser: {
+    id: 'laser',
+    name: '镭射塔',
+    key: '5',
+    cost: 500,
+    hp: 200,
+    range: 6.3,
+    fireRate: 0.55,
+    damage: 75,
+    damageType: 'physical',
+    element: 'none',
+    laserTower: true,
+    beamWidth: 0.55,
+    color: 0xe0f2fe,
+    accent: 0x38bdf8,
+    desc: '贯穿射线 · 可嵌入元素塔 · 优先锁定精英与首领'
+  },
   cursed: {
     id: 'cursed',
     name: '诅咒塔',
-    key: '=',
+    key: '[',
     cost: 1000,
     hp: 180,
     range: 6,
@@ -267,7 +284,7 @@ export const TOWER_TYPES = Object.freeze({
   frost: {
     id: 'frost',
     name: '霜冻塔',
-    key: '5',
+    key: '6',
     cost: 75,
     hp: 110,
     range: 2.7,
@@ -282,7 +299,7 @@ export const TOWER_TYPES = Object.freeze({
   burn: {
     id: 'burn',
     name: '灼烧塔',
-    key: '6',
+    key: '7',
     cost: 95,
     hp: 130,
     range: 3,
@@ -297,7 +314,7 @@ export const TOWER_TYPES = Object.freeze({
   water: {
     id: 'water',
     name: '沧浪塔',
-    key: '7',
+    key: '8',
     cost: 125,
     hp: 125,
     range: 3,
@@ -312,7 +329,7 @@ export const TOWER_TYPES = Object.freeze({
   surge: {
     id: 'surge',
     name: '电涌塔',
-    key: '8',
+    key: '9',
     cost: 150,
     hp: 130,
     range: 3,
@@ -327,7 +344,7 @@ export const TOWER_TYPES = Object.freeze({
   wind: {
     id: 'wind',
     name: '风爆塔',
-    key: '9',
+    key: '0',
     cost: 255,
     hp: 170,
     range: 3.3,
@@ -343,7 +360,7 @@ export const TOWER_TYPES = Object.freeze({
   light: {
     id: 'light',
     name: '曜辉塔',
-    key: '0',
+    key: '-',
     cost: 800,
     hp: 115,
     range: 3.2,
@@ -358,7 +375,7 @@ export const TOWER_TYPES = Object.freeze({
   dark: {
     id: 'dark',
     name: '玄蚀塔',
-    key: '-',
+    key: '=',
     cost: 800,
     hp: 120,
     range: 3.2,
@@ -627,12 +644,16 @@ export const ENEMY_TYPES = Object.freeze({
     noLeak: true,
     noBaseAttack: true,
     attackRange: 5,
-    stopDistance: 4,
     immuneChance: 0.3,
     summonInterval: 14,
-    stoppedSummonInterval: 8,
     summonCount: 2,
     summonMinDistanceFromBase: 9,
+    teleportCooldown: 8,
+    teleportBaseChance: 0.02,
+    teleportDamageScale: 3,
+    teleportPressureDecay: 4,
+    teleportMinDistance: 3,
+    teleportMaxDistance: 12,
     detourChance: 0,
     size: 2.8,
     height: 2.6,
@@ -713,13 +734,13 @@ export const WAVE_CONFIG = Object.freeze({
   count: 12,
   baseBudget: 10,
   budgetGrowth: 1.22,
-  hpGrowth: 0.045,
-  speedGrowth: 0.012,
+  hpGrowth: 0.05,
+  speedGrowth: 0.014,
   maxSpeedMul: 1.28,
   rewardGrowth: 0.03,
   eliteEvery: 4,
   endlessGrowth: 1.1,
-  endlessHpGrowth: 1.065,
+  endlessHpGrowth: 1.07,
   lateCountGrowth: 0.06,
   budgetToHpExponent: 0.45,
   elitePromotionBase: 0.002,
@@ -734,5 +755,6 @@ export const ECONOMY = Object.freeze({
   waveBonusBase: 30,
   waveBonusPerWave: 7
 });
+
 
 
