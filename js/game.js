@@ -2251,7 +2251,20 @@ export class Game {
     const tower = this.towerAt(cell.x, cell.y);
     if (tower) {
       const selectedType = TOWER_TYPES[this.selectedTowerType];
-      if (tower.type.laserTower && selectedType?.element && selectedType.element !== 'none') {
+      if (
+        tower.type.laserTower &&
+        !tower.mountedType &&
+        selectedType?.element &&
+        selectedType.element !== 'none'
+      ) {
+        this.placeTower(cell.x, cell.y);
+        return;
+      }
+      if (
+        tower.type.element &&
+        tower.type.element !== 'none' &&
+        selectedType?.laserTower
+      ) {
         this.placeTower(cell.x, cell.y);
         return;
       }
@@ -2336,6 +2349,14 @@ export class Game {
       this.mountLaserElement(existingTower, type);
       return;
     }
+    if (
+      type.laserTower &&
+      existingTower?.type.element &&
+      existingTower.type.element !== 'none'
+    ) {
+      this.embedTowerIntoNewLaser(existingTower, type, x, y);
+      return;
+    }
     if (!this.isBuildable(x, y)) {
       this.toast('这里不能建造');
       return;
@@ -2410,6 +2431,16 @@ export class Game {
     tower.barWidth = 0.84;
   }
 
+  attachLaserElement(laser, type, investment) {
+    laser.mountedType = type;
+    laser.mountedElement = type.element;
+    laser.mountedInvestment = investment;
+    this.updateLaserMountVisual(laser);
+    this.recomputeTowerAuras();
+    if (this.selectedTower === laser) this.updateTowerPanel();
+    this.updateHud();
+  }
+
   mountLaserElement(laser, type) {
     if (laser.mountedType) {
       this.toast('镭射塔已经嵌入元素塔');
@@ -2420,14 +2451,43 @@ export class Game {
       return;
     }
     this.gold -= type.cost;
-    laser.mountedType = type;
-    laser.mountedElement = type.element;
-    laser.mountedInvestment = type.cost;
-    this.updateLaserMountVisual(laser);
-    this.recomputeTowerAuras();
-    if (this.selectedTower === laser) this.updateTowerPanel();
-    this.updateHud();
+    this.attachLaserElement(laser, type, type.cost);
     this.toast(`镭射塔嵌入 ${type.name}`);
+  }
+
+  removeTowerObject(tower) {
+    this.scene.remove(tower.mesh);
+    this.disposeObject(tower.mesh);
+    this.scene.remove(tower.bar);
+    tower.barFill.material.dispose();
+    this.towers = this.towers.filter((item) => item !== tower);
+    this.towerGrid.delete(`${tower.x},${tower.y}`);
+    if (this.selectedTower === tower) {
+      this.selectedTower = null;
+      this.selectedRing.visible = false;
+      this.hideTowerPanel();
+    }
+  }
+
+  embedTowerIntoNewLaser(existingTower, laserType, x, y) {
+    if (this.gold < laserType.cost) {
+      this.toast('金币不足');
+      return;
+    }
+    const mountedType = existingTower.type;
+    const mountedInvestment = existingTower.investment;
+    this.removeTowerObject(existingTower);
+    this.placeTower(x, y);
+    const laser = this.towerAt(x, y);
+    if (!laser || !laser.type.laserTower) return;
+    this.attachLaserElement(laser, mountedType, mountedInvestment);
+    this.selectedTower = laser;
+    this.selectedRing.position.set(laser.mesh.position.x, 0.2, laser.mesh.position.z);
+    this.selectedRing.scale.setScalar(laser.stats.range * TILE_SIZE);
+    this.selectedRing.material.color.setHex(laser.type.color);
+    this.selectedRing.visible = true;
+    this.showTowerPanel(laser);
+    this.toast(`镭射塔嵌入 ${mountedType.name}`);
   }
 
   updateLaserMountVisual(laser) {
