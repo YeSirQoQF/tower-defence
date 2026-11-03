@@ -3976,10 +3976,11 @@ export class Game {
     const rangeSq = (tower.type.recognizeRange * TILE_SIZE) ** 2;
     const elements = [];
     for (const other of this.towers) {
-      if (other === tower || !other.type.element || other.type.element === 'none') continue;
+      const element = other.stats?.element;
+      if (other === tower || !element || element === 'none') continue;
       const dx = other.mesh.position.x - tower.mesh.position.x;
       const dz = other.mesh.position.z - tower.mesh.position.z;
-      if (dx * dx + dz * dz <= rangeSq) elements.push(other.type.element);
+      if (dx * dx + dz * dz <= rangeSq) elements.push(element);
     }
     const attributes = elements.length > 0 ? [...new Set(elements)] : ['none'];
 
@@ -4044,7 +4045,8 @@ export class Game {
       const dx = other.mesh.position.x - tower.mesh.position.x;
       const dz = other.mesh.position.z - tower.mesh.position.z;
       if (dx * dx + dz * dz > recognizeRangeSq) continue;
-      if (other.type.element && other.type.element !== 'none') elements.push(other.type.element);
+      const element = other.stats?.element;
+      if (element && element !== 'none') elements.push(element);
       const amount = Math.min(Math.max(0, other.hp - 1), other.hp * tower.type.hpConsumeRatio);
       if (amount > 0) {
         other.hp = Math.max(1, other.hp - amount);
